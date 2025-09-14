@@ -618,7 +618,6 @@ public partial class ScriptService : IScriptService
                                 GlobalMethod.MoveMouseTo(300, 300);
                             }
 
-
                         }
                     }
                 });
