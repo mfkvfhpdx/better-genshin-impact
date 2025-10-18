@@ -78,7 +78,7 @@ public partial class ScriptService : IScriptService
             var tcc = project.GroupInfo.Config.PathingConfig.TaskCycleConfig;
             if (tcc.Enable)
             {
-                int index = tcc.GetExecutionOrder(DateTime.Now);
+                int index = tcc.GetExecutionOrder();
                 if (index == -1)
                 {
                     if(enableLogging) _logger.LogInformation($"{project.Name}周期配置参数错误，配置将不生效，任务正常执行！");
@@ -436,7 +436,10 @@ public partial class ScriptService : IScriptService
 
         if (!fisrt&&!RunnerContext.Instance.IsPreExecution)
         {
-            Notify.Event(NotificationEvent.GroupEnd).Success($"配置组{groupName}结束");
+            if (CancellationContext.Instance.IsManualStop is false)
+            {
+                Notify.Event(NotificationEvent.GroupEnd).Success($"配置组{groupName}结束");
+            }
         }
 
         if (taskProgress != null)
@@ -490,6 +493,7 @@ public partial class ScriptService : IScriptService
         target.JsScriptSettingsObject = source.JsScriptSettingsObject;
         target.GroupInfo = source.GroupInfo;
         target.AllowJsNotification = source.AllowJsNotification;
+        target.AllowJsHTTPHash = source.AllowJsHTTPHash;
         target.SkipFlag = source.SkipFlag;
     }
 
@@ -582,11 +586,12 @@ public partial class ScriptService : IScriptService
                     {
                         if (!homePageViewModel.TaskDispatcherEnabled || !TaskContext.Instance().IsInitialized)
                         {
+                            await Task.Delay(500);
                             continue;
                         }
 
                         var content = TaskControl.CaptureToRectArea();
-                        if (Bv.IsInMainUi(content) || Bv.IsInAnyClosableUi(content))
+                        if (Bv.IsInMainUi(content) || Bv.IsInAnyClosableUi(content) || Bv.IsInDomain(content))
                         {
                             return;
                         }
@@ -610,6 +615,12 @@ public partial class ScriptService : IScriptService
                                     SystemControl.MinimizeAndActivateWindow(TaskContext.Instance().GameHandle);
                                 }
                                 SystemControl.ActivateWindow();
+                            }
+
+                            //自启动游戏，如果鼠标在游戏外面，将无法自动开门，这里尝试移动到游戏界面
+                            if (sw.Elapsed.TotalSeconds < 200)
+                            {
+                                GlobalMethod.MoveMouseTo(300, 300);
                             }
 
                         }

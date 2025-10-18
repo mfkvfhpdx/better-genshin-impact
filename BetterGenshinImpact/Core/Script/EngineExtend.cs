@@ -8,6 +8,8 @@ using OpenCvSharp;
 using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.GameTask.Model.Area;
 using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.GameTask.AutoDomain;
+using BetterGenshinImpact.GameTask.AutoFight;
 using BetterGenshinImpact.GameTask.AutoFight.Model;
 
 namespace BetterGenshinImpact.Core.Script;
@@ -30,6 +32,7 @@ public class EngineExtend
         engine.AddHostObject("genshin", new Dependence.Genshin());
         engine.AddHostObject("log", new Log());
         engine.AddHostObject("file", new LimitedFile(workDir)); // 限制文件访问
+        engine.AddHostObject("http", new Http()); // 限制文件访问
         engine.AddHostObject("notification", new Notification());
 
         // 任务调度器
@@ -62,7 +65,11 @@ public class EngineExtend
         
         engine.AddHostObject("OpenCvSharp", new HostTypeCollection("OpenCvSharp"));
 
-
+        engine.AddHostType("ServerTime", typeof(ServerTime));
+        
+        engine.AddHostType("AutoDomainParam", typeof(AutoDomainParam));  
+        engine.AddHostType("AutoFightParam", typeof(AutoFightParam)); 
+        
 
 
         // 添加C#的类型

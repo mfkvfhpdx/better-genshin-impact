@@ -40,6 +40,7 @@ using BetterGenshinImpact.GameTask.AutoDomain.Model;
 using BetterGenshinImpact.GameTask.Common;
 using Compunet.YoloSharp;
 using Microsoft.Extensions.DependencyInjection;
+using BetterGenshinImpact.GameTask.AutoFight;
 
 namespace BetterGenshinImpact.GameTask.AutoDomain;
 
@@ -175,7 +176,8 @@ public class AutoDomainTask : ISoloTask
             {
                 combatScenes = new CombatScenes().InitializeTeam(CaptureToRectArea());
             }
-            RetryTeamInit(combatScenes);// 队伍没初始化成功则重试
+
+            RetryTeamInit(combatScenes); // 队伍没初始化成功则重试
 
             // 0. 切换到第一个角色
             var combatCommands = FindCombatScriptAndSwitchAvatar(combatScenes);
@@ -273,12 +275,12 @@ public class AutoDomainTask : ISoloTask
                 if ("芬德尼尔之顶".Equals(_taskParam.DomainName))
                 {
                     menuFound = await NewRetry.WaitForElementAppear(
-                    AutoPickAssets.Instance.PickRo,
-                    () => Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown),
-                    _ct,
-                    20,
-                    500
-                );
+                        AutoPickAssets.Instance.PickRo,
+                        () => Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown),
+                        _ct,
+                        20,
+                        500
+                    );
                     Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
                 }
                 else if ("无妄引咎密宫".Equals(_taskParam.DomainName))
@@ -295,14 +297,13 @@ public class AutoDomainTask : ISoloTask
                         500
                     );
                     Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
-
                 }
                 else if ("太山府".Equals(_taskParam.DomainName))
                 {
                     menuFound = await NewRetry.WaitForElementAppear(
                         AutoPickAssets.Instance.PickRo,
                         () => { },
-                    _ct,
+                        _ct,
                         20,
                         500
                     );
@@ -310,11 +311,11 @@ public class AutoDomainTask : ISoloTask
                 else
                 {
                     menuFound = await NewRetry.WaitForElementAppear(
-                    AutoPickAssets.Instance.PickRo,
-                    () => Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown),
-                    _ct,
-                    20,
-                    500
+                        AutoPickAssets.Instance.PickRo,
+                        () => Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown),
+                        _ct,
+                        20,
+                        500
                     );
                     Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
                 }
@@ -335,7 +336,6 @@ public class AutoDomainTask : ISoloTask
                 {
                     throw new Exception("请检查是否已进入秘境页面");
                 }
-
             }
             else
             {
@@ -390,8 +390,8 @@ public class AutoDomainTask : ISoloTask
             Logger.LogInformation("自动秘境：{Text}", "检测到秘境限时全开");
         }
 
-        DateTime now = DateTime.Now;
-        if ((now.DayOfWeek == DayOfWeek.Sunday && now.Hour >= 4 || now.DayOfWeek == DayOfWeek.Monday && now.Hour < 4) || limitedFullyStringRaocrListdone != null)
+        var serverTime = ServerTimeHelper.GetServerTimeNow();
+        if (serverTime is { DayOfWeek: DayOfWeek.Sunday, Hour: >= 4 } || serverTime is { DayOfWeek: DayOfWeek.Monday, Hour: < 4 } || limitedFullyStringRaocrListdone != null)
         {
             using var artifactArea = CaptureToRectArea().Find(fightAssets.ArtifactAreaRa); //检测是否为圣遗物副本
             if (artifactArea.IsEmpty())
@@ -466,6 +466,7 @@ public class AutoDomainTask : ISoloTask
                     ra2.Dispose();
                     Logger.LogInformation("自动秘境：点击 {Text}", "单人挑战");
                 }
+
                 using var confirmRectArea2 = ra.Find(RecognitionObject.Ocr(ra.Width * 0.263, ra.Height * 0.32,
                     ra.Width - ra.Width * 0.263 * 2, ra.Height - ra.Height * 0.32 - ra.Height * 0.353));
                 if (confirmRectArea2.IsExist() && confirmRectArea2.Text.Contains("是否仍要挑战该秘境"))
@@ -482,10 +483,7 @@ public class AutoDomainTask : ISoloTask
         // 等待队伍选择界面出现
         var teamUiFound = await NewRetry.WaitForElementAppear(
             ElementAssets.Instance.PartyBtnChooseView,
-            () =>
-            {
-                Logger.LogInformation("自动秘境：进入 {Text}", "队伍选择界面");
-            },
+            () => { Logger.LogInformation("自动秘境：进入 {Text}", "队伍选择界面"); },
             _ct,
             10,
             1000
@@ -519,6 +517,7 @@ public class AutoDomainTask : ISoloTask
         {
             Logger.LogWarning("开始挑战按钮未出现或未能点击。");
         }
+
         // 载入
         await Delay(1000, _ct);
     }
@@ -555,6 +554,7 @@ public class AutoDomainTask : ISoloTask
                 done.Dispose();
                 Logger.LogInformation("自动秘境：点击 {Text}", done.Text);
             }
+
             // 检查左下角区域是否还存在目标文字，消失则继续，存在则结束
             using var leftBottom = CaptureToRectArea();
             var leftBottomOcr = leftBottom.Find(AutoFightAssets.Instance.AbnormalIconRa);
@@ -646,6 +646,7 @@ public class AutoDomainTask : ISoloTask
         {
             try
             {
+                AutoFightTask.FightStatusFlag = true;
                 while (!cts.Token.IsCancellationRequested)
                 {
                     // 通用化战斗策略
@@ -668,6 +669,7 @@ public class AutoDomainTask : ISoloTask
             {
                 Logger.LogInformation("自动战斗线程结束");
                 Simulation.ReleaseAllKey();
+                AutoFightTask.FightStatusFlag = false;
             }
         }, cts.Token);
 
@@ -1117,13 +1119,13 @@ public class AutoDomainTask : ISoloTask
                 bool resinUsed = false;
                 if (resinStatus.CondensedResinCount > 0)
                 {
-                    resinUsed = PressUseResin(ra3, "浓缩树脂");
+                    (resinUsed, _) = PressUseResin(ra3, "浓缩树脂");
                     resinStatus.CondensedResinCount -= 1;
                 }
                 else if (resinStatus.OriginalResinCount >= 20)
                 {
-                    resinUsed = PressUseResin(ra3, "原粹树脂");
-                    resinStatus.OriginalResinCount -= 20;
+                    (resinUsed, var num) = PressUseResin(ra3, "原粹树脂");
+                    resinStatus.OriginalResinCount -= num;
                 }
 
                 if (!resinUsed)
@@ -1147,11 +1149,15 @@ public class AutoDomainTask : ISoloTask
                 var failCount = 0;
                 foreach (var record in _resinPriorityListWhenSpecifyUse)
                 {
-                    if (record.RemainCount > 0 && PressUseResin(textListInPrompt2, record.Name))
+                    if (record.RemainCount > 0)
                     {
-                        record.RemainCount -= 1;
-                        Logger.LogInformation("自动秘境：{Name} 刷取 {Re}/{Max}", record.Name, record.MaxCount - record.RemainCount, record.MaxCount);
-                        break;
+                        var (success, _) = PressUseResin(textListInPrompt2, record.Name);
+                        if (success)
+                        {
+                            record.RemainCount -= 1;
+                            Logger.LogInformation("自动秘境：{Name} 刷取 {Re}/{Max}", record.Name, record.MaxCount - record.RemainCount, record.MaxCount);
+                            break;
+                        }
                     }
                     else
                     {
@@ -1227,6 +1233,7 @@ public class AutoDomainTask : ISoloTask
                             }
                         }
                     }
+
                     return true;
                 }
             }
@@ -1246,13 +1253,13 @@ public class AutoDomainTask : ISoloTask
         Bv.ClickBlackConfirmButton(CaptureToRectArea());
     }
 
-    private bool PressUseResin(ImageRegion ra, string resinName)
+    public static (bool, int) PressUseResin(ImageRegion ra, string resinName)
     {
         var regionList = ra.FindMulti(RecognitionObject.Ocr(ra.Width * 0.25, ra.Height * 0.2, ra.Width * 0.5, ra.Height * 0.6));
         return PressUseResin(regionList, resinName);
     }
 
-    private bool PressUseResin(List<Region> regionList, string resinName)
+    public static (bool, int) PressUseResin(List<Region> regionList, string resinName)
     {
         var resinKey = regionList.FirstOrDefault(t => t.Text.Contains(resinName));
         if (resinKey != null)
@@ -1269,10 +1276,11 @@ public class AutoDomainTask : ISoloTask
                     // 点击使用
                     useKey.Click();
                     // 解决水龙王按下左键后没松开，然后后续点击按下就没反应了。使用双击
-                    Sleep(60, _ct);
+                    Sleep(60);
                     useKey.Click();
-                    Logger.LogInformation("自动秘境：使用 {ResinName}", resinName);
-                    return true;
+                    var num = GetResinNum(resinKey, resinName);
+                    Logger.LogInformation("自动秘境：使用 {ResinName}, 数量：{Num}", resinName, num);
+                    return (true, num);
                 }
                 else
                 {
@@ -1285,13 +1293,41 @@ public class AutoDomainTask : ISoloTask
             }
         }
 
-        return false;
+        return (false, 0);
+    }
+
+    private static int GetResinNum(Region region, string resinName)
+    {
+        if (resinName == "原粹树脂")
+        {
+            if (region.Text.Contains("20"))
+            {
+                return 20;
+            }
+            else if (region.Text.Contains("40"))
+            {
+                return 40;
+            }
+            else
+            {
+                Logger.LogWarning("自动秘境：未识别到原粹树脂消耗体力数量，默认按20计算");
+                return 20;
+            }
+        }
+        else if (resinName == "浓缩树脂" || resinName == "脆弱树脂" || resinName == "须臾树脂")
+        {
+            return 1;
+        }
+        else
+        {
+            throw new ArgumentException("未知的树脂名称");
+        }
     }
 
     /// <summary>
     /// 判断两个区域在垂直方向上是否有重叠
     /// </summary>
-    private bool IsHeightOverlap(Region region1, Region region2)
+    private static bool IsHeightOverlap(Region region1, Region region2)
     {
         int region1Top = region1.Y;
         int region1Bottom = region1.Y + region1.Height;
@@ -1302,7 +1338,7 @@ public class AutoDomainTask : ISoloTask
         return (region1Top <= region2Bottom && region1Bottom >= region2Top);
     }
 
-    private async Task ArtifactSalvage()
+    private  async Task ArtifactSalvage()
     {
         if (!_taskParam.AutoArtifactSalvage)
         {
