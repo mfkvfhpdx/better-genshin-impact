@@ -93,7 +93,7 @@ public partial class ScriptService : IScriptService
             
         }
 
-        if (TaskContext.Instance().Config.OtherConfig.FarmingPlanConfig.Enabled)
+        if (TaskContext.Instance().Config.OtherConfig.FarmingPlanConfig.Enabled && project.Type == "Pathing")
         {
             try
             {
