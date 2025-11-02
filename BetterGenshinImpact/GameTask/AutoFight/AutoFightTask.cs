@@ -412,7 +412,7 @@ public class AutoFightTask : ISoloTask
                         }
                         #endregion
                         
-                        command.Execute(combatScenes);
+                        command.Execute(combatScenes, lastCommand);
                         //统计战斗人次
                         if (i == combatCommands.Count - 1 || command.Name != combatCommands[i + 1].Name)
                         {
@@ -682,7 +682,7 @@ public class AutoFightTask : ISoloTask
         Simulation.SendInput.SimulateAction(GIActions.OpenPartySetupScreen);
         await Delay(detectDelayTime, _ct);
         
-        var ra = CaptureToRectArea();
+        using var ra = CaptureToRectArea();
         //判断整个界面是否有红色色块，如果有，则战继续，否则战斗结束
         // 只提取橙色
         
