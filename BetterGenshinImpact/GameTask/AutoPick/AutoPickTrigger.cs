@@ -7,6 +7,7 @@ using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask.AutoPick.Assets;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service;
+using BetterGenshinImpact.View.Windows;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using System;
@@ -99,7 +100,7 @@ public partial class AutoPickTrigger : ITaskTrigger
         catch (Exception e)
         {
             _logger.LogError(e, "读取拾取黑/白名单失败");
-            MessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
+            ThemedMessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
         }
 
         return [];
@@ -119,7 +120,7 @@ public partial class AutoPickTrigger : ITaskTrigger
         catch (Exception e)
         {
             _logger.LogError(e, "读取拾取黑/白名单失败");
-            MessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
+            ThemedMessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
         }
 
         return [];
@@ -139,7 +140,7 @@ public partial class AutoPickTrigger : ITaskTrigger
         catch (Exception e)
         {
             _logger.LogError(e, "读取拾取黑/白名单失败");
-            MessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
+            ThemedMessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
         }
 
         return [];
@@ -193,13 +194,20 @@ public partial class AutoPickTrigger : ITaskTrigger
 
         var scale = TaskContext.Instance().SystemInfo.AssetScale;
         var config = TaskContext.Instance().Config.AutoPickConfig;
+        
+        // 存在 L 键位是千星奇遇，无需拾取
+        using var lKeyRa = content.CaptureRectArea.Find(_autoPickAssets.LRo);
+        if (lKeyRa.IsExist())
+        {
+            return;
+        }
 
         // 识别到拾取键，开始识别物品图标
         var isExcludeIcon = false;
         _autoPickAssets.ChatIconRo.RegionOfInterest = new Rect(
             foundRectArea.X + (int)(config.ItemIconLeftOffset * scale), foundRectArea.Y,
             (int)((config.ItemTextLeftOffset - config.ItemIconLeftOffset) * scale), foundRectArea.Height);
-        var chatIconRa = content.CaptureRectArea.Find(_autoPickAssets.ChatIconRo);
+        using var chatIconRa = content.CaptureRectArea.Find(_autoPickAssets.ChatIconRo);
         speedTimer.Record("识别聊天图标");
         if (!chatIconRa.IsEmpty())
         {
@@ -209,7 +217,7 @@ public partial class AutoPickTrigger : ITaskTrigger
         else
         {
             _autoPickAssets.SettingsIconRo.RegionOfInterest = _autoPickAssets.ChatIconRo.RegionOfInterest;
-            var settingsIconRa = content.CaptureRectArea.Find(_autoPickAssets.SettingsIconRo);
+            using var settingsIconRa = content.CaptureRectArea.Find(_autoPickAssets.SettingsIconRo);
             speedTimer.Record("识别设置图标");
             if (!settingsIconRa.IsEmpty())
             {
@@ -254,8 +262,7 @@ public partial class AutoPickTrigger : ITaskTrigger
             return;
         }
 
-        // var textMat = new Mat(content.CaptureRectArea.SrcGreyMat, textRect);
-        var gradMat = new Mat(content.CaptureRectArea.CacheGreyMat,
+        using var gradMat = new Mat(content.CaptureRectArea.CacheGreyMat,
             new Rect(textRect.X, textRect.Y, textRect.Width, Math.Min(textRect.Height, 3)));
         var avgGrad = gradMat.Sobel(MatType.CV_32F, 1, 0).Mean().Val0;
         if (avgGrad < -3)
@@ -272,13 +279,14 @@ public partial class AutoPickTrigger : ITaskTrigger
         }
         else
         {
-            var textMat = new Mat(content.CaptureRectArea.SrcMat, textRect);
+            using var textMat = new Mat(content.CaptureRectArea.SrcMat, textRect);
             var boundingRect = TextRectExtractor.GetTextBoundingRect(textMat);
+            // var boundingRect = new Rect(); // 不使用自己写的文字区域提取
             // 如果找到有效区域
             if (boundingRect.X <20 && boundingRect.Width > 5 && boundingRect.Height > 5)
             {
                 // 截取只包含文字的区域
-                var textOnlyMat = new Mat(textMat, new Rect(0, 0,
+                using var textOnlyMat = new Mat(textMat, new Rect(0, 0,
                     boundingRect.Right + 5 < textMat.Width ? boundingRect.Right + 5 : textMat.Width, textMat.Height));
                 text = OcrFactory.Paddle.OcrWithoutDetector(textOnlyMat);
                 

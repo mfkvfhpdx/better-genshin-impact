@@ -12,6 +12,7 @@ using BetterGenshinImpact.GameTask.Model.Area;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service;
 using BetterGenshinImpact.View.Drawable;
+using BetterGenshinImpact.View.Windows;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using System;
@@ -112,7 +113,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
         catch (Exception e)
         {
             _logger.LogError(e, "读取自动剧情默认暂停点击关键词列表失败");
-            MessageBox.Error("读取自动剧情默认暂停点击关键词列表失败，请确认修改后的自动剧情默认暂停点击关键词内容格式是否正确！");
+            ThemedMessageBox.Error("读取自动剧情默认暂停点击关键词列表失败，请确认修改后的自动剧情默认暂停点击关键词内容格式是否正确！");
         }
 
         try
@@ -126,7 +127,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
         catch (Exception e)
         {
             _logger.LogError(e, "读取自动剧情暂停点击关键词列表失败");
-            MessageBox.Error("读取自动剧情暂停点击关键词列表失败，请确认修改后的自动剧情暂停点击关键词内容格式是否正确！");
+            ThemedMessageBox.Error("读取自动剧情暂停点击关键词列表失败，请确认修改后的自动剧情暂停点击关键词内容格式是否正确！");
         }
 
         try
@@ -140,7 +141,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
         catch (Exception e)
         {
             _logger.LogError(e, "读取自动剧情优先点击选项列表失败");
-            MessageBox.Error("读取自动剧情优先点击选项列表失败，请确认修改后的自动剧情优先点击选项内容格式是否正确！");
+            ThemedMessageBox.Error("读取自动剧情优先点击选项列表失败，请确认修改后的自动剧情优先点击选项内容格式是否正确！");
         }
     }
 
@@ -543,7 +544,28 @@ public partial class AutoSkipTrigger : ITaskTrigger
 
             if (rs.Count > 0)
             {
-                // 用户自定义关键词 匹配
+                // 自定义优先选项匹配  
+                if (_config.IsClickCustomPriorityOption() && !string.IsNullOrEmpty(_config.CustomPriorityOptions))  
+                {  
+                    var customOptions = _config.CustomPriorityOptions  
+                        .Split(new[] { '\r', '\n', ';', '；' }, StringSplitOptions.RemoveEmptyEntries)  
+                        .Select(s => s.Trim())  
+                        .Where(s => !string.IsNullOrEmpty(s))  
+                        .ToList();  
+      
+                    foreach (var item in rs)  
+                    {
+                        foreach (var customOption in customOptions)  
+                        {
+                            if (item.Text.Contains(customOption))  
+                            {
+                                ClickOcrRegion(item);
+                                return true;  
+                            }  
+                        }  
+                    }  
+                }
+                // 内置关键词 匹配
                 foreach (var item in rs)
                 {
                     // 选择关键词
@@ -569,6 +591,16 @@ public partial class AutoSkipTrigger : ITaskTrigger
                         if (_config.AutoGetDailyRewardsEnabled && (item.Text.Contains("每日") || item.Text.Contains("委托")))
                         {
                             ClickOcrRegion(item, "每日委托");
+                            TaskControl.Sleep(800);
+                            
+                            // 6.2 每日提示确认
+                            var ra1 = TaskControl.CaptureToRectArea();
+                            if (Bv.ClickBlackConfirmButton(ra1))
+                            {
+                                _logger.LogInformation("存在提示并确认");
+                            }
+                            ra1.Dispose();
+                            
                             _prevGetDailyRewardsTime = DateTime.Now; // 记录领取时间
                         }
                         else if (_config.AutoReExploreEnabled && (item.Text.Contains("探索") || item.Text.Contains("派遣")))
@@ -627,6 +659,16 @@ public partial class AutoSkipTrigger : ITaskTrigger
             }
 
             return true;
+        }
+        else
+        {
+            // 没有气泡的时候识别 F 选项
+            using var pickRa = region.Find(AutoPickAssets.Instance.ChatPickRo);
+            if (pickRa.IsExist())
+            {
+                _postMessageSimulator?.KeyPressBackground(AutoPickAssets.Instance.PickVk);
+                AutoSkipLog("无气泡图标，但存在交互键，直接按下交互键");
+            }
         }
 
         return false;
@@ -834,7 +876,7 @@ public partial class AutoSkipTrigger : ITaskTrigger
             }
             else
             {
-                content.CaptureRectArea.Derive(bbox).Click();
+                content.CaptureRectArea.ClickTo(100, 100); // 点击角色横幅外的区域才能跳过
             }
 
             _logger.LogInformation("自动剧情：关闭角色弹窗");
@@ -849,7 +891,8 @@ public partial class AutoSkipTrigger : ITaskTrigger
         {
             // var rects = MatchTemplateHelper.MatchOnePicForOnePic(content.CaptureRectArea.SrcMat.CvtColor(ColorConversionCodes.BGRA2BGR),
             //     _autoSkipAssets.SubmitGoodsMat, TemplateMatchModes.SqDiffNormed, null, 0.9, 4);
-            var rects = ContoursHelper.FindSpecifyColorRects(content.CaptureRectArea.SrcMat, new Scalar(233, 229, 220), 100, 20);
+            var param = new MorphologyParam(new Size(5,5), MorphTypes.Close, 2);
+            var rects = ContoursHelper.FindSpecifyColorRects(content.CaptureRectArea.SrcMat, new Scalar(233, 229, 220), 100, 20, param);
             if (rects.Count == 0)
             {
                 return false;
