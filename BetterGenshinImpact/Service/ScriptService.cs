@@ -19,6 +19,7 @@ using BetterGenshinImpact.GameTask.Common.Job;
 using BetterGenshinImpact.GameTask.FarmingPlan;
 using BetterGenshinImpact.GameTask.LogParse;
 using BetterGenshinImpact.GameTask.TaskProgress;
+using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notification.Model.Enum;
@@ -69,7 +70,11 @@ public partial class ScriptService : IScriptService
         }
         if (project.GroupInfo is { Config.PathingConfig.Enabled: true } )
         {
-            if (IsCurrentHourEqual(project.GroupInfo.Config.PathingConfig.SkipDuring))
+            //if (IsCurrentHourEqual(project.GroupInfo.Config.PathingConfig.SkipDuring))
+            if (TimeRangeHelper.IsInTimeRange(project.GroupInfo.Config.PathingConfig.SkipDuring))
+            {
+                
+            }
             {
                 if(enableLogging) _logger.LogInformation($"{project.Name}任务已到禁止执行时段，将跳过！");
                 return true;
