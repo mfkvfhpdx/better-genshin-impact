@@ -133,8 +133,9 @@ public partial class HomePageViewModel : ViewModel
 
         _autoRun = false;
 
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && args[1].Contains("start"))
+        // 只对纯 "start" 参数自动启动截图器
+        // startOneDragon、--startGroups 等由各自流程中的 StartGameTask 处理
+        if (CommandLineOptions.Instance.Action == CommandLineAction.Start)
         {
             _ = OnStartTriggerAsync();
         }
@@ -335,7 +336,7 @@ public partial class HomePageViewModel : ViewModel
     [RelayCommand]
     public void OnGoToWikiUrl()
     {
-        Process.Start(new ProcessStartInfo("https://bettergi.com/doc.html") { UseShellExecute = true });
+        Process.Start(new ProcessStartInfo("https://www.bettergi.com/doc.html") { UseShellExecute = true });
     }
 
     [RelayCommand]

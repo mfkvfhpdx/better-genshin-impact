@@ -79,12 +79,21 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
     /// </summary>
     protected override ILogger Logger => TaskControl.Logger;
 
-    private readonly AutoStygianOnslaughtConfig _taskParam;
+    private readonly AutoStygianOnslaughtParam _taskParam;
     private readonly CombatScriptBag _combatScriptBag;
     private List<ResinUseRecord> _resinPriorityListWhenSpecifyUse;
     private LowerHeadThenWalkToTask? _lowerHeadThenWalkToTask;
+    public AutoStygianOnslaughtTask(AutoStygianOnslaughtParam taskParam)
+    {
+        AutoFightAssets.DestroyInstance();
+        _taskParam = taskParam;
+        _combatScriptBag = CombatScriptParser.ReadAndParse(taskParam.CombatScriptBagPath);
+        _resinPriorityListWhenSpecifyUse = ResinUseRecord.BuildFromDomainParam(taskParam);
 
-    public AutoStygianOnslaughtTask(AutoStygianOnslaughtConfig taskParam, string path)
+        // 注册所有状态处理器
+        RegisterAllStateHandlers();
+    }
+    public AutoStygianOnslaughtTask(AutoStygianOnslaughtParam taskParam, string path)
     {
         AutoFightAssets.DestroyInstance();
         _taskParam = taskParam;
@@ -155,7 +164,7 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
             (StygianState.EventMenu, [StygianState.StygianOnslaughtPage]),
             (StygianState.StygianOnslaughtPage, [StygianState.TeleportMap, StygianState.DomainEntrance]),
             (StygianState.TeleportMap, [StygianState.DomainEntrance]),
-            (StygianState.DomainEntrance, [StygianState.DifficultySelect]),
+            (StygianState.DomainEntrance, [StygianState.DomainEntrance, StygianState.DifficultySelect]),
             (StygianState.DifficultySelect, [StygianState.DomainLobby]),
             (StygianState.DomainLobby, [StygianState.BossSelect, StygianState.LeylineFlowerPrompt]),
 
@@ -252,14 +261,14 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
     {
         return ra.Find(ElementAssets.Instance.BtnWhiteCancel).IsExist() &&
                ra.FindMulti(RecognitionObject.Ocr(ra.Width * 0.35, ra.Height * 0.7, ra.Width * 0.3, ra.Height * 0.2))
-                   .Any(o => o.Text.Contains("返回"));
+                 .Any(o => o.Text.Contains("返回"));
     }
 
     private bool DetectBattleResultLose(ImageRegion ra)
     {
         return ra.Find(ElementAssets.Instance.BtnWhiteConfirm).IsExist() &&
                ra.FindMulti(RecognitionObject.Ocr(ra.Width * 0.2, ra.Height * 0.3, ra.Width * 0.6, ra.Height * 0.3))
-                   .Any(o => o.Text.Contains("挑战失败") || o.Text.Contains("重新挑战"));
+                 .Any(o => o.Text.Contains("挑战失败") || o.Text.Contains("重新挑战"));
     }
 
     // ========== 第三优先级：OCR 检测 ==========
@@ -275,13 +284,6 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
     {
         var ocrResult = ra.FindMulti(RecognitionObject.Ocr(ra.Width * 0.2, ra.Height * 0.2, ra.Width * 0.6, ra.Height * 0.6));
         var found = ocrResult.Any(t => t.Text.Contains("地脉之花"));
-
-        // 调试日志
-        var texts = ocrResult.Any()
-            ? string.Join(", ", ocrResult.Select(o => $"'{o.Text}'"))
-            : "（无结果）";
-        Logger.LogInformation($"DetectLeylineFlowerPrompt: OCR结果=[{texts}], 地脉之花={found}");
-
         return found;
     }
 
@@ -293,29 +295,14 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
         var hasPreview = ocrResult.Any(o => o.Text.Contains("角色预览"));
         var hasStart = ocrResult.Any(o => o.Text.Contains("开始挑战"));
         var found = hasPreview && hasStart;
-        
-        // 调试日志
-        var texts = ocrResult.Any()
-            ? string.Join(", ", ocrResult.Select(o => $"'{o.Text}'"))
-            : "（无结果）";
-        Logger.LogInformation($"DetectBossSelect: 右侧OCR结果=[{texts}], 角色预览={hasPreview}, 开始挑战={hasStart}");
-        
         return found;
     }
 
     private bool DetectDifficultySelect(ImageRegion ra)
     {
         // "单人挑战" 在右下角
-        var ocrResult = ra.FindMulti(RecognitionObject.Ocr(ra.Width * 0.5, ra.Height * 0.7, ra.Width * 0.5, ra.Height * 0.3));
-        var found = ocrResult.Any(o => o.Text.Contains("单人挑战"));
-        
-        // 调试日志
-        var texts = ocrResult.Any()
-            ? string.Join(", ", ocrResult.Select(o => $"'{o.Text}'"))
-            : "（无结果）";
-        Logger.LogInformation($"DetectDifficultySelect: 右下角OCR结果=[{texts}], 包含单人挑战={found}");
-        
-        return found;
+        return ra.FindMulti(RecognitionObject.Ocr(ra.Width * 0.5, ra.Height * 0.7, ra.Width * 0.5, ra.Height * 0.3))
+                 .Any(o => o.Text.Contains("单人挑战"));
     }
 
     private bool DetectDomainEntrance(ImageRegion ra)
@@ -323,16 +310,8 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
         // 秘境入口特征：屏幕右侧有"幽境危战"四个字
         // 坐标：左上角(1223, 510), 右下角(1376, 566)
         // 宽度=153, 高度=56
-        var ocrResult = ra.FindMulti(RecognitionObject.Ocr(1223, 510, 153, 56));
-        var found = ocrResult.Any(o => o.Text.Contains("幽境危战"));
-        
-        // 始终输出日志，帮助调试
-        var texts = ocrResult.Any() 
-            ? string.Join(", ", ocrResult.Select(o => $"'{o.Text}'"))
-            : "（无结果）";
-        Logger.LogInformation($"DetectDomainEntrance: 区域(1223,510,153,56) OCR结果=[{texts}], 包含幽境危战={found}");
-        
-        return found;
+        return ra.FindMulti(RecognitionObject.Ocr(1223, 510, 153, 56))
+                 .Any(o => o.Text.Contains("幽境危战"));
     }
 
     private bool DetectEventMenu(ImageRegion ra)
@@ -340,13 +319,13 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
         // 活动一览位置：左上角(125, 142), 右下角(238, 170)
         // OCR 参数：(x, y, width, height)
         return ra.FindMulti(RecognitionObject.Ocr(125, 142, 238 - 125, 170 - 142))
-                   .Any(o => o.Text.Contains("活动一览"));
+                 .Any(o => o.Text.Contains("活动一览"));
     }
 
     private bool DetectStygianOnslaughtPage(ImageRegion ra)
     {
         return ra.FindMulti(RecognitionObject.Ocr(ra.Width * 0.55, ra.Height * 0.3, ra.Width * 0.4, ra.Height * 0.6))
-                   .Any(o => o.Text.Contains("前往挑战"));
+                 .Any(o => o.Text.Contains("前往挑战"));
     }
 
     #endregion
@@ -390,10 +369,10 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
             await Delay(500, _ct);
 
             // 2. 在列表区域内查找"幽境危战"并点击
-            var listItem = page.GetByText("幽境危战").WithRoi(listRegion);
-            if (listItem.IsExist())
+            var target = page.GetByText("幽境危战").WithRoi(listRegion).FindAll().FirstOrDefault();
+            if (target != null)
             {
-                listItem.FindAll().FirstOrDefault()?.Click();
+                target.Click();
                 await Delay(300, _ct);
                 return StateHandlerResult.Success; // 等待转换到 StygianOnslaughtPage
             }
@@ -403,15 +382,20 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
 
         // 如果两次都没找到，可能"幽境危战"已经被选中，直接尝试检测下一状态
         Logger.LogWarning($"{Name}：未找到幽境危战，可能已被选中，尝试检测 StygianOnslaughtPage");
-        page.GetByText("幽境危战").WithRoi(listRegion).FindAll().FirstOrDefault()?.Click();
-        await Delay(300, _ct);
-        return StateHandlerResult.Success; // 等待转换到 StygianOnslaughtPage
+        return StateHandlerResult.Success; // 让状态机继续等待邻接状态出现
     }
 
     private async Task<StateHandlerResult> HandleStygianOnslaughtPageState(BvPage page)
     {
         Logger.LogInformation($"{Name}：点击前往挑战");
-        page.GetByText("前往挑战").WithRoi(r => r.CutRight(0.5)).FindAll().FirstOrDefault()?.Click();
+        var challengeButton = page.GetByText("前往挑战").WithRoi(r => r.CutRight(0.5)).FindAll().FirstOrDefault();
+        if (challengeButton == null)
+        {
+            Logger.LogWarning($"{Name}：未找到前往挑战按钮");
+            return StateHandlerResult.Retry;
+        }
+
+        challengeButton.Click();
         await Delay(300, _ct);
         return StateHandlerResult.Success; // 等待转换到 TeleportMap 或 DomainEntrance
     }
@@ -419,7 +403,14 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
     private async Task<StateHandlerResult> HandleTeleportMapState(BvPage page)
     {
         Logger.LogInformation($"{Name}：点击传送");
-        page.Locator(QuickTeleportAssets.Instance.TeleportButtonRo).FindAll().FirstOrDefault()?.Click();
+        var teleportButton = page.Locator(QuickTeleportAssets.Instance.TeleportButtonRo).FindAll().FirstOrDefault();
+        if (teleportButton == null)
+        {
+            Logger.LogWarning($"{Name}：未找到传送按钮");
+            return StateHandlerResult.Retry;
+        }
+
+        teleportButton.Click();
         await Delay(300, _ct);
         return StateHandlerResult.Success; // 等待转换到 DomainEntrance
     }
@@ -442,6 +433,12 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
         // 点击确认进入
         using var ra = CaptureToRectArea();
         var btn = ra.Find(ElementAssets.Instance.BtnWhiteConfirm);
+        if (btn.IsEmpty())
+        {
+            Logger.LogWarning($"{Name}：未找到进入确认按钮");
+            return StateHandlerResult.Retry;
+        }
+
         btn.Click();
         await Delay(300, _ct);
         return StateHandlerResult.Success; // 等待转换到 DomainLobby
@@ -707,12 +704,12 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
 
             if (resinStatus.CondensedResinCount > 0)
             {
-                AutoDomainTask.PressUseResin(ra, "浓缩树脂");
+                AutoDomainTask.PressUseResin(ra, "浓缩树脂", Name);
                 resinStatus.CondensedResinCount -= 1;
             }
             else if (resinStatus.OriginalResinCount >= 20)
             {
-                var (_, num) = AutoDomainTask.PressUseResin(ra, "原粹树脂");
+                var (_, num) = AutoDomainTask.PressUseResin(ra, "原粹树脂", Name);
                 resinStatus.OriginalResinCount -= num;
             }
 
@@ -727,7 +724,7 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
             {
                 if (record.RemainCount > 0)
                 {
-                    var (success, _) = AutoDomainTask.PressUseResin(textList, record.Name);
+                    var (success, _) = AutoDomainTask.PressUseResin(textList, record.Name, Name);
                     if (success)
                     {
                         record.RemainCount -= 1;
@@ -825,7 +822,13 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
 
     private async Task FindAndInteractLeylineFlowerLoop()
     {
-        await _lowerHeadThenWalkToTask!.Start(_ct);
+        // 先看看当前身边是否有F，有的话，直接F
+        using var ra1 = CaptureToRectArea();
+        var text = Bv.FindFKeyText(ra1);
+        if (string.IsNullOrEmpty(text) || !text.Contains("激活"))
+        {
+            await _lowerHeadThenWalkToTask!.Start(_ct);
+        }
 
         await NewRetry.WaitForAction(() =>
         {

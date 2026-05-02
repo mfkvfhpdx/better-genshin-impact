@@ -190,7 +190,19 @@ public class PathExecutor
                         {
                             if (CurWaypoints.Item1 > 0)
                             {
-                                await Delay(1000, ct);
+                                var prevWaypoints = waypointsList[CurWaypoints.Item1 - 1];
+                                var prevWaypoint = prevWaypoints[prevWaypoints.Count - 1];
+                                if (prevWaypoint.Type == WaypointType.Teleport.Code
+                                    || prevWaypoint.Action == ActionEnum.Fight.Code
+                                    || prevWaypoint.Action == ActionEnum.NahidaCollect.Code
+                                    || prevWaypoint.Action == ActionEnum.PickAround.Code)
+                                {
+                                    // No delay
+                                }
+                                else
+                                {
+                                    await Delay(1000, ct);
+                                }
                             }
                             await HandleTeleportWaypoint(waypoint);
                         }
@@ -318,6 +330,11 @@ public class PathExecutor
             await Delay(4000, ct);
             // 血量肯定不满，直接去七天神像回血
             await TpStatueOfTheSeven();
+        }
+
+        if (PartyConfig.SkipPartySwitch)
+        {
+            return true;
         }
 
         var pRaList = ra.FindMulti(AutoFightAssets.Instance.PRa); // 判断是否联机
@@ -450,9 +467,11 @@ public class PathExecutor
         // 没有强制配置的情况下，使用地图追踪内的条件配置
         // 必须放在这里，因为要通过队伍识别来得到最终结果
         var pathingConditionConfig = TaskContext.Instance().Config.PathingConditionConfig;
+        var skipPartySwitch = PartyConfig.SkipPartySwitch;
         if (PartyConfig is { Enabled: false })
         {
             PartyConfig = pathingConditionConfig.BuildPartyConfigByCondition(_combatScenes);
+            PartyConfig.SkipPartySwitch = skipPartySwitch;
         }
 
         // 校验角色是否存在
@@ -1091,6 +1110,7 @@ public class PathExecutor
             || waypoint.Action == ActionEnum.PyroCollect.Code
             || waypoint.Action == ActionEnum.CombatScript.Code
             || waypoint.Action == ActionEnum.Mining.Code
+            || waypoint.Action == ActionEnum.LinneaMining.Code
             || waypoint.Action == ActionEnum.Fishing.Code
             || waypoint.Action == ActionEnum.ExitAndRelogin.Code
             || waypoint.Action == ActionEnum.EnterAndExitWonderland.Code
