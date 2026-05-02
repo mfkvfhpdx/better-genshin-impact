@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -32,25 +32,7 @@ public partial class ScriptService : IScriptService
 {
     private readonly ILogger<ScriptService> _logger = App.GetLogger<ScriptService>();
     private readonly BlessingOfTheWelkinMoonTask _blessingOfTheWelkinMoonTask = new();
-    private static bool IsCurrentHourEqual(string input)
-    {
-        // 尝试将输入字符串转换为整数
-        if (int.TryParse(input, out int hour))
-        {
-            // 验证小时是否在合法范围内（0-23）
-            if (hour is >= 0 and <= 23)
-            {
-                // 获取当前小时数
-                int currentHour = DateTime.Now.Hour;
-                // 判断是否相等
-                return currentHour == hour;
-            }
-        }
 
-        // 如果输入非数字或不合法，返回 false
-        return false;
-    }
-    
     public bool ShouldSkipTask(ScriptGroupProject project,bool enableLogging = true)
     {
         if (project.Status != "Enabled")
@@ -70,11 +52,7 @@ public partial class ScriptService : IScriptService
         }
         if (project.GroupInfo is { Config.PathingConfig.Enabled: true } )
         {
-            //if (IsCurrentHourEqual(project.GroupInfo.Config.PathingConfig.SkipDuring))
             if (TimeRangeHelper.IsInTimeRange(project.GroupInfo.Config.PathingConfig.SkipDuring))
-            {
-                
-            }
             {
                 if(enableLogging) _logger.LogInformation($"{project.Name}任务已到禁止执行时段，将跳过！");
                 return true;

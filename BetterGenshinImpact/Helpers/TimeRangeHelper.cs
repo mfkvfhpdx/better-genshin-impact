@@ -10,7 +10,7 @@ public static class TimeRangeHelper
     /// <summary>
     /// 判断当前时间是否在指定时间范围内
     /// </summary>
-    /// <param name="input">时间范围表达式，支持：单个小时、小时:分钟、范围段、多个条件逗号分隔</param>
+    /// <param name="input">时间范围表达式，支持：单个小时、小时:分钟、范围段（纯数字端点为整点小时段：如 1-2 含 1:00:00–2:59:59）、多个条件逗号分隔</param>
     /// <returns>是否在时间范围内</returns>
     public static bool IsInTimeRange(string input)
     {
@@ -147,35 +147,56 @@ public static class TimeRangeHelper
         var startStr = parts[0].Trim();
         var endStr = parts[1].Trim();
         
-        // 解析开始时间
-        if (!TryParseTimeToMinutes(startStr, out int startMinutes, out string errorMsg))
+        if (!TryParseRangeEndpoint(startStr, isEnd: false, out int startSeconds, out string errorMsg))
         {
             LogDebug($"解析开始时间失败: {errorMsg}");
             return false;
         }
         
-        // 解析结束时间
-        if (!TryParseTimeToMinutes(endStr, out int endMinutes, out errorMsg))
+        if (!TryParseRangeEndpoint(endStr, isEnd: true, out int endSeconds, out errorMsg))
         {
             LogDebug($"解析结束时间失败: {errorMsg}");
             return false;
         }
         
         var now = DateTime.Now;
-        int currentMinutes = now.Hour * 60 + now.Minute;
+        int currentSeconds = now.Hour * 3600 + now.Minute * 60 + now.Second;
         
-        // 处理跨天情况（如 23:01-4）
-        if (startMinutes > endMinutes)
+        // 跨天：起点时刻晚于终点（如 23:50-4 含次日 4:59:59）
+        if (startSeconds > endSeconds)
         {
-            // 跨天范围：开始时间 > 结束时间
-            // 当前时间在 [startMinutes, 1440) 或 [0, endMinutes] 范围内
-            return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+            return currentSeconds >= startSeconds || currentSeconds <= endSeconds;
         }
-        else
+
+        return currentSeconds >= startSeconds && currentSeconds <= endSeconds;
+    }
+
+    /// <summary>
+    /// 解析范围端点为「从 0 点起的秒数」：纯数字小时起点为 h:00:00，终点为 h:59:59；HH:mm 起点为该分钟 :00，终点为该分钟 :59。
+    /// </summary>
+    private static bool TryParseRangeEndpoint(string timeStr, bool isEnd, out int secondsFromMidnight, out string errorMessage)
+    {
+        secondsFromMidnight = 0;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(timeStr))
         {
-            // 同一天范围
-            return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+            errorMessage = "时间字符串为空";
+            return false;
         }
+
+        var t = timeStr.Trim();
+        if (!t.Contains(':') && int.TryParse(t, out int hour) && hour is >= 0 and <= 23)
+        {
+            secondsFromMidnight = isEnd ? hour * 3600 + 59 * 60 + 59 : hour * 3600;
+            return true;
+        }
+
+        if (!TryParseTimeToMinutes(t, out int minuteOfDay, out errorMessage))
+            return false;
+
+        secondsFromMidnight = minuteOfDay * 60 + (isEnd ? 59 : 0);
+        return true;
     }
     
     /// <summary>
