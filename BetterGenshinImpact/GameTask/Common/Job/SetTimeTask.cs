@@ -1,12 +1,11 @@
-﻿using System;
+using BetterGenshinImpact.Core.Input;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
-using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask.AutoSkip.Assets;
 using BetterGenshinImpact.GameTask.Common.BgiVision;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using BetterGenshinImpact.GameTask.Model.Area;
-using BetterGenshinImpact.View.Drawable;
 using Microsoft.Extensions.Logging;
 using Vanara.PInvoke;
 using static BetterGenshinImpact.GameTask.Common.TaskControl;
@@ -35,7 +34,7 @@ public class SetTimeTask
         }
         finally
         {
-            VisionContext.Instance().DrawContent.ClearAll();
+            TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.ClearAll();
         }
     }
 
@@ -50,7 +49,7 @@ public class SetTimeTask
         int m = hour * 60 + minute - h * 60;
         h = ((h % 24) + 24) % 24;
         Logger.LogInformation($"设置时间到 {h} 点 {m} 分");
-        Simulation.SendInput.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
+        InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
         await Delay(800, ct);
         GameCaptureRegion.GameRegion1080PPosClick(50, 700);
         await Delay(900, ct);
@@ -58,7 +57,7 @@ public class SetTimeTask
         await Delay(100, ct);
         GameCaptureRegion.GameRegion1080PPosMove(1500, 1000);
         await Delay(300, ct);
-        Simulation.SendInput.Mouse.LeftButtonClick();
+        InputHub.Foreground.Mouse.LeftButtonClick();
         await Delay(7, ct);
         
         if (skipTimeAdjustmentAnimation)
@@ -73,14 +72,20 @@ public class SetTimeTask
             await Delay(200, ct);
             await _returnMainUiTask.Start(ct);
             // 跳过动画不总能成功
-            if (Bv.IsInMainUi(CaptureToRectArea()))
+            using var capture = CaptureToRectArea();
+            if (Bv.IsInMainUi(capture))
             {
                 return;
             }
         }
         await Delay(3000, ct);
         // 出现X的时候代表时间切换成功
-        await NewRetry.WaitForAction(() => CaptureToRectArea().Find(ElementAssets.Instance.PageCloseWhiteRo).IsExist(), ct, 25);
+        await NewRetry.WaitForAction(() =>
+        {
+            using var ra = CaptureToRectArea();
+            using var closeButton = ra.Find(ElementRecognition.Get("PageCloseWhite", ra));
+            return closeButton.IsExist();
+        }, ct, 25);
         await _returnMainUiTask.Start(ct);
     }
 
@@ -88,9 +93,9 @@ public class SetTimeTask
     private async Task CancelAnimation(CancellationToken ct)
     {
         GameCaptureRegion.GameRegion1080PPosMove(200, 200);
-        Simulation.SendInput.Mouse.LeftButtonDown();
+        InputHub.Foreground.Mouse.LeftButtonDown();
         await Delay(10, ct);
-        Simulation.SendInput.Mouse.LeftButtonUp();
+        InputHub.Foreground.Mouse.LeftButtonUp();
     }
 
     double[] GetPosition(double r, double index)
@@ -103,9 +108,9 @@ public class SetTimeTask
     {
         GameCaptureRegion.GameRegion1080PPosMove(x, y);
         await Delay(50, ct);
-        Simulation.SendInput.Mouse.LeftButtonDown();
+        InputHub.Foreground.Mouse.LeftButtonDown();
         await Delay(50, ct);
-        Simulation.SendInput.Mouse.LeftButtonUp();
+        InputHub.Foreground.Mouse.LeftButtonUp();
         await Delay(stepDuration, ct);
     }
 
@@ -113,11 +118,11 @@ public class SetTimeTask
     {
         GameCaptureRegion.GameRegion1080PPosMove(x1, y1);
         await Delay(50, ct);
-        Simulation.SendInput.Mouse.LeftButtonDown();
+        InputHub.Foreground.Mouse.LeftButtonDown();
         await Delay(50, ct);
         GameCaptureRegion.GameRegion1080PPosMove(x2, y2);
         await Delay(50, ct);
-        Simulation.SendInput.Mouse.LeftButtonUp();
+        InputHub.Foreground.Mouse.LeftButtonUp();
         await Delay(stepDuration, ct);
     }
 

@@ -1,6 +1,6 @@
-using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Simulator.Extensions;
-using BetterGenshinImpact.GameTask.AutoOpenChest.Assets;
 using BetterGenshinImpact.GameTask.Model.Area;
 using Microsoft.Extensions.Logging;
 using System;
@@ -18,16 +18,14 @@ public class AutoOpenChestTask : ISoloTask
 {
     public string Name => "识别并开启宝箱";
 
-    private AutoOpenChestAssets assets = AutoOpenChestAssets.Instance;
-
     public async Task Start(CancellationToken ct)
     {
-        var ra = CaptureToRectArea();
+        using var initialCapture = CaptureToRectArea();
 
-        if (ra.Find(assets.ChestFIconRo).IsExist())
+        if (initialCapture.Find(RecognitionAssets.Get("AutoOpenChest", "ChestFIcon", initialCapture)).IsExist())
         {
-            CancellationTokenSource _ct = new();
-            ct.Register(_ct.Cancel);
+            using CancellationTokenSource _ct = new();
+            using var cancellationRegistration = ct.Register(_ct.Cancel);
             bool isFlower = false; // 是否是地脉花
             // 限制寻找宝箱的时间
             var timeLimit = 60;
@@ -37,8 +35,8 @@ public class AutoOpenChestTask : ISoloTask
             {
                 while (!_ct.IsCancellationRequested)
                 {
-                    ra = CaptureToRectArea();
-                    Region chestIcon = ra.Find(assets.ChestIconRo);
+                    using var ra = CaptureToRectArea();
+                    Region chestIcon = ra.Find(RecognitionAssets.Get("AutoOpenChest", "ChestIcon", ra));
                     int limit = chestIcon.Width;
                     if (!chestIcon.IsExist())
                     {
@@ -46,32 +44,33 @@ public class AutoOpenChestTask : ISoloTask
                         return;
                     }
 
-                    if (ra.Find(assets.ChestFIconRo).IsExist() || ra.Find(assets.FlowerFIconRo).IsExist())
+                    if (ra.Find(RecognitionAssets.Get("AutoOpenChest", "ChestFIcon", ra)).IsExist()
+                        || ra.Find(RecognitionAssets.Get("AutoOpenChest", "FlowerFIcon", ra)).IsExist())
                     {
                         // 找到宝箱/ 地脉花
-                        isFlower = ra.Find(assets.FlowerFIconRo).IsExist();
-                        Simulation.SendInput.SimulateAction(GIActions.PickUpOrInteract, KeyType.KeyPress);
-                        Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+                        isFlower = ra.Find(RecognitionAssets.Get("AutoOpenChest", "FlowerFIcon", ra)).IsExist();
+                        InputHub.Foreground.SimulateAction(GIActions.PickUpOrInteract, KeyType.KeyPress);
+                        InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
                         break;
                     }
 
                     if (Math.Abs(chestIcon.Width / 2 - chestIcon.X) < limit)
                     {
-                        Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+                        InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
                     }
 
                     if (chestIcon.Y > 600)
                     {
                         // 若宝箱图标在下方就表示宝箱在后面。
-                        Simulation.SendInput.SimulateAction(GIActions.MoveBackward);
+                        InputHub.Foreground.SimulateAction(GIActions.MoveBackward);
                         await Delay(30, _ct.Token);
-                        Simulation.SendInput.Mouse.MiddleButtonClick();
+                        InputHub.Foreground.Mouse.MiddleButtonClick();
                     }
                     else
                     {
                         var gap = ra.Width / 2 - chestIcon.X;
                         int rate = 2;
-                        Simulation.SendInput.Mouse.MoveMouseBy(gap / rate, 0);
+                        InputHub.Foreground.Mouse.MoveMouseBy(gap / rate, 0);
                     }
 
                     await Delay(500, _ct.Token);
@@ -80,7 +79,7 @@ public class AutoOpenChestTask : ISoloTask
             finally
             {
                 // 如果循环提前退出，取消计时任务
-                Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+                InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
                 _ct.Cancel();
                 await timeoutTask; // 等待超时任务结束（忽略可能的异常）
             }
@@ -96,7 +95,7 @@ public class AutoOpenChestTask : ISoloTask
 
     private async void flowerHandle()
     {
-        Simulation.SendInput.SimulateAction(GIActions.OpenPaimonMenu);
+        InputHub.Foreground.SimulateAction(GIActions.OpenPaimonMenu);
     }
 
 

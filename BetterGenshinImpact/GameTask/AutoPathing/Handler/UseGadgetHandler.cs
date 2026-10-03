@@ -1,4 +1,4 @@
-﻿using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
@@ -23,7 +23,7 @@ public class UseGadgetHandler : IActionHandler
     public async Task RunAsync(CancellationToken ct, WaypointForTrack? waypointForTrack = null, object? config = null)
     {
         Logger.LogInformation("执行 {Text}", "使用小道具");
-        Simulation.SendInput.SimulateAction(GIActions.QuickUseGadget);
+        InputHub.Foreground.SimulateAction(GIActions.QuickUseGadget);
 
 
         if (waypointForTrack != null
@@ -31,7 +31,7 @@ public class UseGadgetHandler : IActionHandler
             && waypointForTrack.ActionParams.Contains("not_wait", StringComparison.OrdinalIgnoreCase))
         {
             // 不等待
-            Simulation.SendInput.SimulateAction(GIActions.QuickUseGadget);
+            InputHub.Foreground.SimulateAction(GIActions.QuickUseGadget);
         }
         else
         {
@@ -42,12 +42,12 @@ public class UseGadgetHandler : IActionHandler
                 double.TryParse(waypointForTrack.ActionParams, out maxWaitSeconds); // 最大等待时间，单位秒
             }
 
-            var screen = CaptureToRectArea();
+            using var screen = CaptureToRectArea();
             var cd = GetCurrentCd(screen);
             if (cd > 100)
             {
                 Logger.LogWarning("小道具正在CD中，当前剩余时间：{Cd}秒，时间过长，可能是识别错误。跳过！", cd);
-                Simulation.SendInput.SimulateAction(GIActions.QuickUseGadget);
+                InputHub.Foreground.SimulateAction(GIActions.QuickUseGadget);
             }
             else if (cd > 0)
             {
@@ -65,11 +65,11 @@ public class UseGadgetHandler : IActionHandler
                 }
 
                 await Delay(waitTime, ct);
-                Simulation.SendInput.SimulateAction(GIActions.QuickUseGadget);
+                InputHub.Foreground.SimulateAction(GIActions.QuickUseGadget);
             }
             else
             {
-                Simulation.SendInput.SimulateAction(GIActions.QuickUseGadget);
+                InputHub.Foreground.SimulateAction(GIActions.QuickUseGadget);
             }
         }
 
@@ -83,7 +83,7 @@ public class UseGadgetHandler : IActionHandler
     /// </summary>
     private double GetCurrentCd(ImageRegion imageRegion)
     {
-        var eRa = imageRegion.DeriveCrop(AutoFightAssets.Instance.ZCooldownRect);
+        var eRa = imageRegion.DeriveCrop(AutoFightAssets.Get(imageRegion).ZCooldownRect);
         var eRaWhite = OpenCvCommonHelper.InRangeHsv(eRa.SrcMat, new Scalar(0, 0, 235), new Scalar(0, 25, 255));
         var text = OcrFactory.Paddle.OcrWithoutDetector(eRaWhite);
         return StringUtils.TryParseDouble(text);

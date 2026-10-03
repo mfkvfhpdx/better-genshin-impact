@@ -3,9 +3,13 @@ using BetterGenshinImpact.Core.Script;
 using BetterGenshinImpact.Core.Script.Project;
 using BetterGenshinImpact.GameTask;
 using BetterGenshinImpact.GameTask.AutoArtifactSalvage;
+using BetterGenshinImpact.GameTask.AutoCombo.ComboBuild;
+using BetterGenshinImpact.GameTask.AutoCombo.ComboRun;
 using BetterGenshinImpact.GameTask.AutoCook;
+using BetterGenshinImpact.GameTask.AutoBoss;
 using BetterGenshinImpact.GameTask.AutoDomain;
 using BetterGenshinImpact.GameTask.AutoFight;
+using BetterGenshinImpact.GameTask.AutoFight.Factory;
 using BetterGenshinImpact.GameTask.AutoFishing;
 using BetterGenshinImpact.GameTask.AutoLeyLineOutcrop;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation;
@@ -17,6 +21,7 @@ using BetterGenshinImpact.GameTask.GetGridIcons;
 using BetterGenshinImpact.GameTask.Model.GameUI;
 using BetterGenshinImpact.GameTask.UseRedeemCode;
 using BetterGenshinImpact.Helpers;
+using BetterGenshinImpact.Helpers.Ui;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.View.Pages;
 using BetterGenshinImpact.View.Windows;
@@ -86,6 +91,12 @@ public partial class TaskSettingsPageViewModel : ViewModel
     private string _switchAutoDomainButtonText = "启动";
 
     [ObservableProperty]
+    private bool _switchAutoBossEnabled;
+
+    [ObservableProperty]
+    private string _switchAutoBossButtonText = "启动";
+
+    [ObservableProperty]
     private int _autoStygianOnslaughtRoundNum;
 
     [ObservableProperty]
@@ -125,15 +136,33 @@ public partial class TaskSettingsPageViewModel : ViewModel
     private string _switchAutoCookButtonText = "启动";
 
     [ObservableProperty]
+    private bool _switchAutoComboEnabled;
+
+    [ObservableProperty]
+    private string _switchAutoComboButtonText = "启动";
+
+    [ObservableProperty]
+    private string _switchAutoComboRunButtonText = "测试运行";
+
+    private bool _autoComboRunRunning;
+
+    private bool _autoComboRunPaused;
+
+    [ObservableProperty]
     private List<string> _domainNameList;
 
     public static List<string> ArtifactSalvageStarList = ["4", "3", "2", "1"];
 
     public static List<int> BossNumList = [1, 2, 3];
 
+    public static List<string> AutoBossNameList = [.. AutoBossData.SupportedBossNames];
+
     public static List<string> AvatarIndexList = ["", "1", "2", "3", "4"];
+    public static List<string> CombatAvatarNameList = [.. AvatarProfiles.GetProfileNames()];
     public static List<string> LeyLineOutcropTypeList = ["启示之花", "藏金之花"];
-    public static List<string> LeyLineOutcropCountryList = ["蒙德", "璃月", "稻妻", "须弥", "枫丹", "纳塔", "挪德卡莱"];
+    public static List<string> LeyLineOutcropCountryList = ["蒙德", "璃月", "稻妻", "须弥", "枫丹", "纳塔", "挪德卡莱", "至冬"];
+    public static List<string> LeyLineOutcropTypeListWithEmpty = ["", .. LeyLineOutcropTypeList];
+    public static List<string> LeyLineOutcropCountryListWithEmpty = ["", .. LeyLineOutcropCountryList];
 
     [ObservableProperty]
     private List<string> _autoMusicLevelList = ["传说", "大师", "困难", "普通", "所有"];
@@ -208,6 +237,20 @@ public partial class TaskSettingsPageViewModel : ViewModel
     [ObservableProperty]
     private string _switchGridIconsAccuracyTestButtonText = "运行模型准确率测试";
 
+    /// <summary>数量 OCR 测试当前选择的分类或当前一页模式。</summary>
+    [ObservableProperty]
+    private InventoryCountComparisonTarget _inventoryCountComparisonTarget = InventoryCountComparisonTarget.CharacterDevelopmentItems;
+
+    /// <summary>数量 OCR 测试下拉框显示的四个目标选项。</summary>
+    public FrozenDictionary<Enum, string> InventoryCountComparisonTargetDict { get; } = Enum
+        .GetValues<InventoryCountComparisonTarget>()
+        .ToFrozenDictionary(
+            e => (Enum)e,
+            e => e.GetType()
+                .GetField(e.ToString())?
+                .GetCustomAttribute<DescriptionAttribute>()?
+                .Description ?? e.ToString());
+
     [ObservableProperty]
     private bool _switchAutoRedeemCodeEnabled;
 
@@ -226,7 +269,7 @@ public partial class TaskSettingsPageViewModel : ViewModel
 
         //_combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
 
-        _domainNameList = ["", .. MapLazyAssets.Instance.DomainNameList];
+        _domainNameList = ["", AutoDomainTask.DevelopmentGuideOption, .. MapLazyAssets.Get().DomainNameList];
         _autoFightViewModel = new AutoFightViewModel(Config);
         _oneDragonFlowViewModel = new OneDragonFlowViewModel();
     }
@@ -260,6 +303,7 @@ public partial class TaskSettingsPageViewModel : ViewModel
             Owner = Application.Current.MainWindow,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        WindowHelper.CenterOnVisibleOwner(messageBox);
 
         var result = await messageBox.ShowDialogAsync();
         var accepted = result == Wpf.Ui.Controls.MessageBoxResult.Primary;
@@ -325,10 +369,15 @@ public partial class TaskSettingsPageViewModel : ViewModel
         SwitchAutoGeniusInvokationEnabled = false;
         SwitchAutoWoodEnabled = false;
         SwitchAutoDomainEnabled = false;
+        SwitchAutoBossEnabled = false;
         SwitchAutoFightEnabled = false;
         SwitchAutoMusicGameEnabled = false;
         SwitchAutoAlbumEnabled = false;
         SwitchAutoCookEnabled = false;
+        SwitchAutoComboEnabled = false;
+        SwitchAutoComboRunButtonText = "测试运行";
+        _autoComboRunRunning = false;
+        _autoComboRunPaused = false;
         SwitchAutoFishingEnabled = false;
         SwitchAutoLeyLineOutcropEnabled = false;
         SwitchArtifactSalvageEnabled = false;
@@ -417,9 +466,16 @@ public partial class TaskSettingsPageViewModel : ViewModel
         var param = new AutoFightParam(path, Config.AutoFightConfig);
 
         SwitchAutoFightEnabled = true;
-        await new TaskRunner()
-            .RunSoloTaskAsync(new AutoFightTask(param));
-        SwitchAutoFightEnabled = false;
+        try
+        {
+            var factory = CombatTaskFactoryProvider.GetFactory(path);
+            await new TaskRunner()
+                .RunSoloTaskAsync(factory.CreateTask(param));
+        }
+        finally
+        {
+            SwitchAutoFightEnabled = false;
+        }
     }
 
     [RelayCommand]
@@ -456,10 +512,19 @@ public partial class TaskSettingsPageViewModel : ViewModel
             return true;
         }
 
-        path = Global.Absolute(@"User\AutoFight\" + strategyName + ".txt");
         if ("根据队伍自动选择".Equals(strategyName))
         {
             path = Global.Absolute(@"User\AutoFight\");
+        }
+        else if (AutoFightParam.ComboStrategyName.Equals(strategyName))
+        {
+            // 固定策略：不对应策略文件，跳过存在性检查，由 ComboCombatTaskFactory 路由
+            path = strategyName;
+            return false;
+        }
+        else
+        {
+            (path, _) = AutoFightParam.ResolveStrategyPath(strategyName);
         }
 
         if (!File.Exists(path) && !Directory.Exists(path))
@@ -469,6 +534,22 @@ public partial class TaskSettingsPageViewModel : ViewModel
         }
 
         return false;
+    }
+
+    [RelayCommand]
+    private async Task OnSwitchAutoBoss()
+    {
+        if (GetFightStrategy(Config.AutoBossConfig.StrategyName, out var path))
+        {
+            return;
+        }
+
+        SwitchAutoBossEnabled = true;
+        AutoBossParam param = new AutoBossParam(path);
+        param.SetAutoBossConfig(Config.AutoBossConfig);
+        await new TaskRunner()
+            .RunSoloTaskAsync(new AutoBossTask(param));
+        SwitchAutoBossEnabled = false;
     }
 
     [RelayCommand]
@@ -613,6 +694,67 @@ public partial class TaskSettingsPageViewModel : ViewModel
         await new TaskRunner()
             .RunSoloTaskAsync(new AutoCookTask());
         SwitchAutoCookEnabled = false;
+    }
+
+    [RelayCommand]
+    private void OnAddAvatarDescriptionOverride()
+    {
+        Config.AutoComboBuildConfig.AvatarDescriptionOverrides.Add(new AvatarProfile("", "", []));
+    }
+
+    [RelayCommand]
+    private void OnRemoveAvatarDescriptionOverride(AvatarProfile item)
+    {
+        Config.AutoComboBuildConfig.AvatarDescriptionOverrides.Remove(item);
+    }
+
+    [RelayCommand]
+    private async Task OnSwitchAutoCombo()
+    {
+        SwitchAutoComboEnabled = true;
+        await new TaskRunner()
+            .RunSoloTaskAsync(new AutoComboBuildTask());
+        SwitchAutoComboEnabled = false;
+    }
+
+    [RelayCommand]
+    private async Task OnSwitchAutoComboRun()
+    {
+        if (_autoComboRunRunning)
+        {
+            // 暂停：取消 Tick 循环，行为树节点状态保留，下次点击继续
+            _autoComboRunRunning = false;
+            _autoComboRunPaused = true;
+            SwitchAutoComboRunButtonText = "继续";
+            CancellationContext.Instance.Cancel();
+            return;
+        }
+
+        // 预检查：未建树时提示用户且不启动任务
+        if (AutoComboRuntime.Session == null)
+        {
+            UIDispatcherHelper.Invoke(() => { Toast.Warning("尚未构建行为树，请先运行一次自动连招任务完成建树"); });
+            return;
+        }
+
+        _autoComboRunRunning = true;
+        _autoComboRunPaused = false;
+        SwitchAutoComboRunButtonText = "暂停";
+        try
+        {
+            // 消费最近一次建树任务暂存的会话；独立运行需显式开启自带战斗结束检测（AutoFightParam 默认关闭）
+            var session = AutoComboRuntime.Session!;
+            await new TaskRunner()
+                .RunSoloTaskAsync(new AutoComboRunTask(new AutoFightParam { FightFinishDetectEnabled = true }, session));
+        }
+        finally
+        {
+            _autoComboRunRunning = false;
+            if (!_autoComboRunPaused)
+            {
+                SwitchAutoComboRunButtonText = "测试运行";
+            }
+        }
     }
 
     [RelayCommand]
@@ -772,6 +914,34 @@ public partial class TaskSettingsPageViewModel : ViewModel
         {
             SwitchGetGridIconsEnabled = false;
         }
+    }
+
+    /// <summary>启动当前选择目标的数量 OCR 对比任务。</summary>
+    [RelayCommand]
+    private async Task OnRunInventoryCountComparison()
+    {
+        try
+        {
+            SwitchGetGridIconsEnabled = true;
+            await new TaskRunner().RunSoloTaskAsync(new InventoryCountComparisonTask(InventoryCountComparisonTarget));
+        }
+        finally
+        {
+            SwitchGetGridIconsEnabled = false;
+        }
+    }
+
+    /// <summary>创建并打开数量 OCR 对比结果根目录。</summary>
+    [RelayCommand]
+    private void OnGoToInventoryCountComparisonFolder()
+    {
+        var path = Global.Absolute(@"log\InventoryCountComparison\");
+        if (!Directory.Exists(path))
+        {
+            Directory.CreateDirectory(path);
+        }
+
+        Process.Start("explorer.exe", path);
     }
 
     [RelayCommand]

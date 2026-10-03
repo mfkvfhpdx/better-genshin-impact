@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -19,6 +19,9 @@ namespace BetterGenshinImpact.GameTask.LogParse
     {
         private static readonly string _configPath = Global.Absolute(@"log\logparse\config.json");
         private static readonly string _assets_dir = Global.Absolute($@"GameTask\LogParse\Assets");
+        private static readonly Regex LogHeaderRegex = new(
+            @"^\[\d{2}:\d{2}:\d{2}\.\d+\] \[[^\]]+\](?: \[(?<Instance>[A-Za-z][A-Za-z0-9]*:S\d+:P\d+:T\d+)\])?",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
         // 添加一个静态事件用于通知日志的生成状态
         public static event Action<string> HtmlGenerationStatusChanged = delegate { };
         private static void NotifyHtmlGenerationStatus(string status)
@@ -49,17 +52,37 @@ namespace BetterGenshinImpact.GameTask.LogParse
 
         public static List<ConfigGroupEntity> ParseFile(List<(string, string)> logFiles)
         {
-            List<(string, string)> logLines = new();
+            Dictionary<string, List<(string, string)>> instanceLogLines = new(StringComparer.Ordinal);
             foreach (var logFile in logFiles)
             {
-                string[] logstrs = SafeReadAllLines(logFile.Item1).ToArray();
-                foreach (var logstr in logstrs)
+                var currentInstance = string.Empty;
+                foreach (var logLine in SafeReadAllLines(logFile.Item1))
                 {
-                    logLines.Add((logstr, logFile.Item2));
+                    var headerMatch = LogHeaderRegex.Match(logLine);
+                    if (headerMatch.Success)
+                    {
+                        var instanceGroup = headerMatch.Groups["Instance"];
+                        // 空 Instance 视为旧格式日志/伪造行（无 [BgiInstance] 字段），延续上一实例，不重置 currentInstance
+                        if (instanceGroup.Success)
+                        {
+                            currentInstance = instanceGroup.Value;
+                        }
+                    }
+
+                    if (!instanceLogLines.TryGetValue(currentInstance, out var logLines))
+                    {
+                        logLines = [];
+                        instanceLogLines[currentInstance] = logLines;
+                    }
+
+                    logLines.Add((logLine, logFile.Item2));
                 }
             }
 
-            return Parse(logLines);
+            return instanceLogLines.Values
+                .SelectMany(Parse)
+                .OrderBy(entity => entity.StartDate)
+                .ToList();
         }
 
         public static List<ConfigGroupEntity> Parse(List<(string, string)> logLines)

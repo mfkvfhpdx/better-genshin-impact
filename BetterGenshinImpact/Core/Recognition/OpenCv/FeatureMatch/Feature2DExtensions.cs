@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using BetterGenshinImpact.Core.Recognition.OpenCv.Model;
 using BetterGenshinImpact.GameTask.Common.BgiVision;
 using BetterGenshinImpact.Helpers;
 using OpenCvSharp;
@@ -145,6 +146,12 @@ public static class Feature2DExtensions
         feature2D.DetectAndCompute(queryMat, queryMatMask, out var queryKeyPoints, queryDescriptors);
 #pragma warning restore CS8604 // 引用类型参数可能为 null。
         speedTimer.Record("模板生成KeyPoint");
+        if (queryKeyPoints.Length == 0 || queryDescriptors.Empty())
+        {
+            // 查询图未检测到任何特征点时，空描述子会让 knnMatch 抛出 OpenCVException（type=0），直接按匹配失败处理
+            return new Point2f();
+        }
+
         var matches = GetMatcher(matcherType).KnnMatch(queryDescriptors, trainDescriptors, k: 2);
         speedTimer.Record("FlannMatch");
 
@@ -192,6 +199,53 @@ public static class Feature2DExtensions
         return transformedCenter[0];
     }
 
+    public static Point2f KnnMatchLocal(
+        this Feature2D feature2D,
+        KeyPointFeatureBlock[][] splitBlocks,
+        Mat trainDescriptors,
+        Size trainImageSize,
+        Rect searchRect,
+        Mat queryMat,
+        Mat? queryMatMask = null,
+        int expandCells = 2)
+    {
+        if (splitBlocks.Length == 0 || splitBlocks[0].Length == 0)
+        {
+            return default;
+        }
+
+        try
+        {
+            var (rowStart, rowEnd, colStart, colEnd) = KeyPointFeatureBlockHelper.GetCellRange(
+                trainImageSize,
+                splitBlocks.Length,
+                splitBlocks[0].Length,
+                searchRect);
+            var mergedBlock = KeyPointFeatureBlockHelper.MergeFeaturesInRange(
+                splitBlocks,
+                trainDescriptors,
+                rowStart - expandCells,
+                rowEnd + expandCells,
+                colStart - expandCells,
+                colEnd + expandCells);
+            var descriptors = mergedBlock.Descriptor;
+            if (mergedBlock.KeyPointArray.Length == 0 || descriptors == null || descriptors.Empty())
+            {
+                descriptors?.Dispose();
+                return default;
+            }
+
+            using (descriptors)
+            {
+                return feature2D.KnnMatch(mergedBlock.KeyPointArray, descriptors, queryMat, queryMatMask);
+            }
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
     public static Point2f[] KnnMatchCorners(this Feature2D feature2D, KeyPoint[] trainKeyPoints, Mat trainDescriptors, Mat queryMat, Mat? queryMatMask = null,
         DescriptorMatcherType matcherType = DescriptorMatcherType.FlannBased)
     {
@@ -201,6 +255,12 @@ public static class Feature2DExtensions
         feature2D.DetectAndCompute(queryMat, queryMatMask, out var queryKeyPoints, queryDescriptors);
 #pragma warning restore CS8604 // 引用类型参数可能为 null。
         speedTimer.Record("模板生成KeyPoint");
+        if (queryKeyPoints.Length == 0 || queryDescriptors.Empty())
+        {
+            // 查询图未检测到任何特征点时，空描述子会让 knnMatch 抛出 OpenCVException（type=0），直接按匹配失败处理
+            return [];
+        }
+
         var matches = GetMatcher(matcherType).KnnMatch(queryDescriptors, trainDescriptors, k: 2);
         speedTimer.Record("FlannMatch");
 

@@ -1,8 +1,7 @@
-﻿using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation.Exception;
-using BetterGenshinImpact.GameTask.AutoSkip.Assets;
 using BetterGenshinImpact.GameTask.Common;
-using BetterGenshinImpact.View.Drawable;
 using Microsoft.Extensions.Logging;
 using System;
 using static BetterGenshinImpact.GameTask.Common.TaskControl;
@@ -12,7 +11,7 @@ namespace BetterGenshinImpact.GameTask.AutoSkip;
 
 public class OneKeyExpeditionTask
 {
-    public void Run(AutoSkipAssets assets)
+    public void Run()
     {
         try
         {
@@ -23,7 +22,7 @@ public class OneKeyExpeditionTask
                 // 1.全部领取
                 var region = CaptureToRectArea(true);
                 // Cv2.ImWrite($"log/ts.png", region.SrcMat);
-                var ra = region.Find(assets.CollectRo);
+                var ra = region.Find(RecognitionAssets.Get("AutoSkip", "Collect", region.Width, region.Height));
                 if (!ra.IsEmpty())
                 {
                     ra.Click();
@@ -34,7 +33,7 @@ public class OneKeyExpeditionTask
                     {
                         Sleep(1);
                         region = CaptureToRectArea(true);
-                        var ra2 = region.Find(assets.ReRo);
+                        var ra2 = region.Find(RecognitionAssets.Get("AutoSkip", "Re", region.Width, region.Height));
                         if (ra2.IsEmpty())
                         {
                             throw new RetryException("未检测到弹出菜单");
@@ -48,7 +47,7 @@ public class OneKeyExpeditionTask
 
                     // 3.退出派遣页面 ESC
                     Sleep(500);
-                    Simulation.SendInput.Keyboard.KeyPress(VK.VK_ESCAPE);
+                    InputHub.Foreground.Keyboard.KeyPress(VK.VK_ESCAPE);
                     Logger.LogInformation("探索派遣：{Text}", "完成");
                     break;
                 }
@@ -70,7 +69,7 @@ public class OneKeyExpeditionTask
         }
         finally
         {
-            VisionContext.Instance().DrawContent.ClearAll();
+            TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.ClearAll();
         }
     }
 }

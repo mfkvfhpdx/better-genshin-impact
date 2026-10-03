@@ -1,14 +1,13 @@
-﻿using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.GameTask.AutoPathing;
 using BetterGenshinImpact.GameTask.AutoPathing.Model;
-using BetterGenshinImpact.GameTask.AutoSkip.Assets;
 using BetterGenshinImpact.GameTask.AutoSkip;
 using BetterGenshinImpact.GameTask.Common.BgiVision;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask.AutoPick.Assets;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using Vanara.PInvoke;
@@ -94,22 +93,21 @@ public class GoToAdventurersGuildTask
             await Delay(800, ct);
             
             // 6.2 每日提示确认
-            var ra1 = CaptureToRectArea();
+            using var ra1 = CaptureToRectArea();
             if (Bv.ClickBlackConfirmButton(ra1))
             {
                 Logger.LogInformation("存在提示并确认");
             }
-            ra1.Dispose();
             
             await _chooseTalkOptionTask.SelectLastOptionUntilEnd(ct, null, 3); // 点几下
-            await Bv.WaitUntilFound(ElementAssets.Instance.PaimonMenuRo, ct);
+            await Bv.WaitUntilFound(ElementRecognition.Get("PaimonMenu"), ct);
             await Delay(500, ct);
-            TaskContext.Instance().PostMessageSimulator.KeyPress(User32.VK.VK_ESCAPE);
+            InputHub.Background.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
             await new ReturnMainUiTask().Start(ct);
 
             // 结束后重新打开
             await Delay(1200, ct);
-            var ra = CaptureToRectArea();
+            using var ra = CaptureToRectArea();
             if (!Bv.FindFAndPress(ra, text: this.catherineLocalizedString))
             {
                 throw new Exception("未找与凯瑟琳对话交互按钮");
@@ -129,7 +127,7 @@ public class GoToAdventurersGuildTask
         if (res == TalkOptionRes.FoundAndClick)
         {
             await Delay(500, ct);
-            new OneKeyExpeditionTask().Run(AutoSkipAssets.Instance);
+            new OneKeyExpeditionTask().Run();
         }
         else if (res == TalkOptionRes.FoundButNotOrange)
         {
@@ -141,7 +139,8 @@ public class GoToAdventurersGuildTask
         }
 
         // 如果最后还在对话界面，选择最后一个选项退出
-        if (Bv.IsInTalkUi(CaptureToRectArea()))
+        using var talkUiCapture = CaptureToRectArea();
+        if (Bv.IsInTalkUi(talkUiCapture))
         {
             await _chooseTalkOptionTask.SelectLastOptionUntilEnd(ct);
             Logger.LogInformation("退出当前对话");
@@ -180,7 +179,7 @@ public class GoToAdventurersGuildTask
             using var ra = CaptureToRectArea();
             if (!Bv.IsInTalkUi(ra))
             {
-                Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+                InputHub.Foreground.Keyboard.KeyPress(AutoPickAssets.Get(ra, TaskContext.Instance().Config.AutoPickConfig.PickKey).PickVk);
                 await Delay(500, ct);
 
                 if (i == retryTalkTimes - 1)

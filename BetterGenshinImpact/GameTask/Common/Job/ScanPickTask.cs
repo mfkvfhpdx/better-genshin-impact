@@ -1,14 +1,13 @@
-﻿using System;
+using BetterGenshinImpact.Core.Input;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGenshinImpact.Core.Recognition.ONNX;
-using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.Core.Simulator.Extensions;
 using BetterGenshinImpact.GameTask.Model.Area;
-using BetterGenshinImpact.View.Drawable;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
@@ -28,11 +27,11 @@ public class ScanPickTask
     private readonly RECT _realCaptureRect = TaskContext.Instance().SystemInfo.CaptureAreaRect;
 
 
-    public async Task Start(CancellationToken ct)
+    public async Task Start(CancellationToken ct, int? seconds = null)
     {
         try
         {
-            await DoOnce(ct);
+            await DoOnce(ct, seconds);
         }
         catch (Exception e)
         {
@@ -41,17 +40,17 @@ public class ScanPickTask
         }
         finally
         {
-            VisionContext.Instance().DrawContent.ClearAll();
+            TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.ClearAll();
         }
     }
 
-    public async Task DoOnce(CancellationToken ct)
+    public async Task DoOnce(CancellationToken ct, int? seconds = null)
     {
-        var sec = TaskContext.Instance().Config.AutoFightConfig.PickDropsAfterFightSeconds;
+        var sec = seconds ?? TaskContext.Instance().Config.AutoFightConfig.PickDropsAfterFightSeconds;
         Stopwatch timeoutStopwatch = Stopwatch.StartNew();
         TimeSpan finishTime = TimeSpan.FromSeconds(sec);
 
-        Simulation.SendInput.SimulateAction(GIActions.Drop);
+        InputHub.Foreground.SimulateAction(GIActions.Drop);
         await ResetCamera(ct);
 
         while (!ct.IsCancellationRequested && timeoutStopwatch.Elapsed < finishTime)
@@ -60,21 +59,28 @@ public class ScanPickTask
             // Logger.LogInformation("存在可拾取物品: {0}", hasItems);
             if (!hasItems)
             {
-                Simulation.ReleaseAllKey();
+                InputHub.ReleaseAll();
                 await ResetCamera(ct);
-                for (var i = 0; i < 10; i++)
+                for (var i = 0; i < 10 && timeoutStopwatch.Elapsed < finishTime; i++)
                 {
-                    Simulation.SendInput.Mouse.MoveMouseBy(400, 0);
+                    InputHub.Foreground.Mouse.MoveMouseBy(400, 0);
                     if (i > 5) //前期不考虑移动扫描
                         await WalkByDirection(ct, GIActions.MoveForward, 100);
-                    Simulation.SendInput.SimulateAction(GIActions.Drop);
+                    InputHub.Foreground.SimulateAction(GIActions.Drop);
                     await Delay(300, ct);
                     (hasItems, pickItems) = DetectPickableItems();
                     if (hasItems) break;
                 }
             }
 
-            if (!hasItems) break;
+            // 一整圈都没有发现物品时，不要提前结束扫描，继续按配置时长扫描
+            if (!hasItems)
+            {
+                continue;
+            }
+
+            // 扫圈中命中物品时相机已转到物品方向，保持当前视角直接移动；
+            // 检测坐标只在当前视角下有效，回正相机会让物品移出视野、坐标失效
 
             // Assume 1080p resolution
             // approximate dist=(x-960)**2+14*(y-888.88)**2
@@ -87,11 +93,11 @@ public class ScanPickTask
             MoveTowardsItem(toPickItem);
 
             await Delay(200, ct);
-            Simulation.SendInput.SimulateAction(GIActions.Drop);
+            InputHub.Foreground.SimulateAction(GIActions.Drop);
         }
         Logger.LogInformation("超时或视野内没有可拾取物品，结束扫描");
-        Simulation.ReleaseAllKey();
-        Simulation.SendInput.SimulateAction(GIActions.Drop);
+        InputHub.ReleaseAll();
+        InputHub.Foreground.SimulateAction(GIActions.Drop);
     }
 
     /// <summary>
@@ -100,41 +106,40 @@ public class ScanPickTask
     /// <param name="toPickItem">The item to move towards</param>
     private static void MoveTowardsItem(Rect toPickItem)
     {
-        // 对于比较远的物品（Y坐标靠上）先用前进靠近
         // 需要避免两个对向的键同时按下
-        if (toPickItem.Bottom > 560)
+        // 左右转向不再受物品底边 y 坐标限制：无论远近都按物品中心相对屏幕中心（960）的横向偏移转向，
+        // 避免远处斜向掉落物只能直行靠近、无法拾取的问题
+        var itemCenterX = toPickItem.X + toPickItem.Width / 2.0;
+        if (itemCenterX < 880)
         {
-            if (toPickItem.X < 760)
-            {
-                Simulation.SendInput.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
-                Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyDown);
-            }
-            else if (toPickItem.X > 1040)
-            {
-                Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
-                Simulation.SendInput.SimulateAction(GIActions.MoveRight, KeyType.KeyDown);
-            }
-            else
-            {
-                Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
-                Simulation.SendInput.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
-            }
+            InputHub.Foreground.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
+            InputHub.Foreground.SimulateAction(GIActions.MoveLeft, KeyType.KeyDown);
+        }
+        else if (itemCenterX > 1040)
+        {
+            InputHub.Foreground.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
+            InputHub.Foreground.SimulateAction(GIActions.MoveRight, KeyType.KeyDown);
+        }
+        else
+        {
+            InputHub.Foreground.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
+            InputHub.Foreground.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
         }
 
         if (toPickItem.Bottom < 770)
         {
-            Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
-            Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+            InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
+            InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
         }
         else if (toPickItem.Bottom > 900)
         {
-            Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
-            Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
+            InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+            InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
         }
         else
         {
-            Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
-            Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
+            InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+            InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
         }
     }
 
@@ -144,7 +149,7 @@ public class ScanPickTask
     /// <returns>A tuple containing whether items were found and the list of pickable items</returns>
     private (bool hasItems, List<Rect> pickItems) DetectPickableItems()
     {
-        var ra = CaptureToRectArea();
+        using var ra = CaptureToRectArea();
         var resultDic = _predictor.Detect(ra);
         // 过滤出可拾取物品
         var pickItems = resultDic.Where(x => x.Key is "drops" or "ore")
@@ -154,17 +159,17 @@ public class ScanPickTask
 
     private static async Task WalkByDirection(CancellationToken ct, GIActions act, int ms = 1000)
     {
-        Simulation.SendInput.SimulateAction(act, KeyType.KeyDown);
+        InputHub.Foreground.SimulateAction(act, KeyType.KeyDown);
         await Delay(ms, ct);
-        Simulation.SendInput.SimulateAction(act, KeyType.KeyUp);
+        InputHub.Foreground.SimulateAction(act, KeyType.KeyUp);
     }
 
     // 回正 并下移视角
     private async Task ResetCamera(CancellationToken ct)
     {
-        Simulation.SendInput.Keyboard.Mouse.MiddleButtonClick();
+        InputHub.Foreground.Mouse.MiddleButtonClick();
         await Delay(500, ct);
-        Simulation.SendInput.Keyboard.Mouse.MoveMouseBy(0, (int)(500 * _dpi));
+        InputHub.Foreground.Mouse.MoveMouseBy(0, (int)(500 * _dpi));
         await Delay(100, ct);
     }
 }

@@ -1,4 +1,4 @@
-﻿using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.Core.Script;
 using BetterGenshinImpact.Core.Script.Group;
 using BetterGenshinImpact.Core.Script.Project;
@@ -16,8 +16,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using BetterGenshinImpact.Helpers;
+using BetterGenshinImpact.Helpers.Ui;
 using BetterGenshinImpact.View.Controls.Drawer;
+using BetterGenshinImpact.View.Controls.Markdown;
 using BetterGenshinImpact.View.Controls.Webview;
 using BetterGenshinImpact.ViewModel.Message;
 using CommunityToolkit.Mvvm.Messaging;
@@ -153,6 +154,7 @@ public partial class JsListViewModel : ViewModel
             Owner = Application.Current.MainWindow,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        WindowHelper.CenterOnVisibleOwner(messageBox);
 
         var result = await messageBox.ShowDialogAsync();
         if (result == Wpf.Ui.Controls.MessageBoxResult.Primary)
@@ -276,27 +278,22 @@ public partial class JsListViewModel : ViewModel
         Grid.SetRow(titleTextBlock, 0);
         mainGrid.Children.Add(titleTextBlock);
 
-        // 如果找到md文件，使用RichTextBox显示
+        // 如果找到md文件，使用MarkdownView显示
         if (!string.IsNullOrEmpty(mdFilePath))
         {
-            string markdown = File.ReadAllText(mdFilePath);
-            var flowDoc = MarkdownToFlowDocumentConverter.ConvertToFlowDocument(markdown);
-            var richTextBox = new RichTextBox
+            var markdownView = new MarkdownView
             {
-                IsReadOnly = true,
-                IsDocumentEnabled = true,
-                BorderThickness = new Thickness(0),
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Document = flowDoc,
+                FilePath = mdFilePath,
+                PresentationDelay = TimeSpan.FromMilliseconds(250),
                 Background = Brushes.Transparent,
                 VerticalAlignment = VerticalAlignment.Stretch,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
-                Margin = new Thickness(0, 10, 0, 0)
+                Margin = new Thickness(0, 10, 0, 0),
+                LinkNavigationMode = MarkdownLinkNavigationMode.SystemDefault
             };
 
-            Grid.SetRow(richTextBox, 1);
-            mainGrid.Children.Add(richTextBox);
+            Grid.SetRow(markdownView, 1);
+            mainGrid.Children.Add(markdownView);
         }
         else
         {

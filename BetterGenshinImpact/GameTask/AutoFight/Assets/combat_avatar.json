@@ -1,6 +1,17 @@
 [
   {
     "alias": [
+      "未知"
+    ],
+    "burstCD": 20,
+    "id": "99999999",
+    "name": "未知角色",
+    "nameEn": "Unknown",
+    "skillCD": 20,
+    "weapon": "0"
+  },
+  {
+    "alias": [
       "旅行者",
       "主角",
       "卑鄙的外乡人",
@@ -50,20 +61,22 @@
   {
     "alias": [
       "奇偶(男)",
-      "MannequinBoy"
+      "MannequinBoy",
+      "奇偶·男性"
     ],
     "id": "10000117",
-    "name": "奇偶(男)",
+    "name": "奇偶·男性",
     "nameEn": "MannequinBoy",
     "weapon": "1"
   },
   {
     "alias": [
       "奇偶(女)",
-      "MannequinGirl"
+      "MannequinGirl",
+      "奇偶·女性"
     ],
     "id": "10000118",
-    "name": "奇偶(女)",
+    "name": "奇偶·女性",
     "nameEn": "MannequinGirl",
     "weapon": "1"
   },
@@ -1765,8 +1778,7 @@
       "西特拉利",
       "黑曜石奶奶",
       "黑曜石",
-      "奶奶",
-      "老伴"
+      "奶奶"
     ],
     "burstCD": 15,
     "id": "10000107",
@@ -2061,7 +2073,8 @@
     "id": "10000128",
     "name": "法尔伽",
     "nameEn": "Varka",
-    "skillCD": 16,
+    "skillCD": 12,
+    "skillHoldCD": 8,
     "weapon": "10"
   },
   {
@@ -2075,5 +2088,118 @@
     "nameEn": "Linnea",
     "skillCD": 18,
     "weapon": "10"
+  },
+  {
+    "alias": [
+      "洛恩",
+      "Lohen"
+    ],
+    "burstCD": 15,
+    "id": "10000129",
+    "name": "洛恩",
+    "nameEn": "Lohen",
+    "skillCD": 18,
+    "weapon": "10"
+  },
+  {
+    "alias": [
+      "尼可",
+      "Nicole"
+    ],
+    "burstCD": 15,
+    "id": "10000131",
+    "name": "尼可",
+    "nameEn": "Nicole",
+    "skillCD": 16,
+    "weapon": "10"
+  },
+  {
+    "alias": [
+      "布伦妮",
+      "Prune"
+    ],
+    "burstCD": 18,
+    "id": "10000132",
+    "name": "布伦妮",
+    "nameEn": "Prune",
+    "skillCD": 15,
+    "weapon": "10"
+  },
+  {
+    "alias": [
+      "桑多涅",
+      "Sandrone",
+      "Marionette"
+    ],
+    "burstCD": 15,
+    "id": "10000133",
+    "name": "桑多涅",
+    "nameEn": "Marionette",
+    "skillCD": 4,
+    "weapon": "10"
+  },
+  {
+    "alias": [
+      "阿罗夏",
+      "Alyosha"
+    ],
+    "burstCD": 18,
+    "id": "10000148",
+    "name": "阿罗夏",
+    "nameEn": "Alyosha",
+    "skillCD": 15,
+    "weapon": "10"
+  },
+  {
+    "alias": [
+      "奥黛塔",
+      "Odette"
+    ],
+    "burstCD": 15,
+    "id": "10000150",
+    "name": "奥黛塔",
+    "nameEn": "Odette",
+    "skillCD": 15,
+    "weapon": "10"
+  },
+  {
+    "id": "10000140",
+    "name": "沃雅妮莎",
+    "nameEn": "Vodyanitsa",
+    "weapon": "10",
+    "skillCD": 16.0,
+    "burstCD": 15.0,
+    "alias": [
+      "沃雅妮莎",
+      "沃",
+      "水妖",
+      "Vodyanitsa"
+    ]
+  },
+  {
+    "id": "10000143",
+    "name": "薇斯纳",
+    "nameEn": "Vesna",
+    "weapon": "1",
+    "skillCD": 18.0,
+    "burstCD": 15.0,
+    "alias": [
+      "薇斯纳",
+      "没头脑",
+      "风仙",
+      "Vesna"
+    ]
+  },
+  {
+    "id": "10000137",
+    "name": "瓦列里",
+    "nameEn": "Valeriy",
+    "weapon": "1",
+    "skillCD": 10,
+    "burstCD": 15,
+    "alias": [
+      "瓦列里",
+      "Valeriy"
+    ]
   }
 ]

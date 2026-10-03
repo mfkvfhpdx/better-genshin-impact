@@ -1,7 +1,7 @@
+using BetterGenshinImpact.Core.Input;
 using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Recognition.OCR;
 using BetterGenshinImpact.Core.Recognition.OpenCv;
-using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.Core.Simulator.Extensions;
 using BetterGenshinImpact.GameTask.Common;
 using BetterGenshinImpact.GameTask.Common.BgiVision;
@@ -12,8 +12,7 @@ using BetterGenshinImpact.GameTask.Model.Area;
 using BetterGenshinImpact.GameTask.Model.GameUI;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Helpers.Extensions;
-using BetterGenshinImpact.View.Drawable;
-using Fischless.WindowsInput;
+using BetterGenshinImpact.Core.Mask;
 using Microsoft.ClearScript;
 using Microsoft.ClearScript.V8;
 using Microsoft.Extensions.Localization;
@@ -40,7 +39,7 @@ namespace BetterGenshinImpact.GameTask.AutoArtifactSalvage;
 public class AutoArtifactSalvageTask : ISoloTask
 {
     private readonly ILogger logger;
-    private readonly InputSimulator input = Simulation.SendInput;
+    private IInputChannel input => InputHub.Foreground;
 
     private CancellationToken ct;
 
@@ -88,52 +87,9 @@ public class AutoArtifactSalvageTask : ISoloTask
         artifactAffixStrDic = ArtifactAffix.DefaultStrDic.Select(kvp => new KeyValuePair<ArtifactAffixType, string>(kvp.Key, stringLocalizer.WithCultureGet(cultureInfo, kvp.Value))).ToFrozenDictionary();
     }
 
-    public static async Task OpenInventory(GridScreenName gridScreenName, InputSimulator input, ILogger logger, CancellationToken ct)
+    public static async Task OpenInventory(GridScreenName gridScreenName, IInputChannel input, ILogger logger, CancellationToken ct)
     {
-        RecognitionObject? recognitionObjectChecked;
-        RecognitionObject? recognitionObjectUnchecked;
-
-        switch (gridScreenName)
-        {
-            case GridScreenName.Weapons:
-                recognitionObjectChecked = ElementAssets.Instance.BagWeaponChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagWeaponUnchecked;
-                break;
-            case GridScreenName.Artifacts:
-                recognitionObjectChecked = ElementAssets.Instance.BagArtifactChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagArtifactUnchecked;
-                break;
-            case GridScreenName.CharacterDevelopmentItems:
-                recognitionObjectChecked = ElementAssets.Instance.BagCharacterDevelopmentItemChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagCharacterDevelopmentItemUnchecked;
-                break;
-            case GridScreenName.Food:
-                recognitionObjectChecked = ElementAssets.Instance.BagFoodChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagFoodUnchecked;
-                break;
-            case GridScreenName.Materials:
-                recognitionObjectChecked = ElementAssets.Instance.BagMaterialChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagMaterialUnchecked;
-                break;
-            case GridScreenName.Gadget:
-                recognitionObjectChecked = ElementAssets.Instance.BagGadgetChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagGadgetUnchecked;
-                break;
-            case GridScreenName.Quest:
-                recognitionObjectChecked = ElementAssets.Instance.BagQuestChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagQuestUnchecked;
-                break;
-            case GridScreenName.PreciousItems:
-                recognitionObjectChecked = ElementAssets.Instance.BagPreciousItemChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagPreciousItemUnchecked;
-                break;
-            case GridScreenName.Furnishings:
-                recognitionObjectChecked = ElementAssets.Instance.BagFurnishingChecked;
-                recognitionObjectUnchecked = ElementAssets.Instance.BagFurnishingUnchecked;
-                break;
-            default:
-                throw new NotSupportedException($"背包不支持的界面：{gridScreenName.GetDescription()}");
-        }
+        var (recognitionObjectChecked, recognitionObjectUnchecked) = GetTabRecognitionObjects(gridScreenName);
 
         // B键打开背包
         input.SimulateAction(GIActions.OpenInventory);
@@ -147,7 +103,7 @@ public class AutoArtifactSalvageTask : ISoloTask
             if (Bv.IsInPromptDialog(ra))
             {
                 // 如果存在物品过期提示，则点击确认按钮
-                Bv.ClickWhiteConfirmButton(ra.DeriveCrop(0, 0, ra.Width, ra.Height - ra.Height * 0.2));
+                Bv.ClickWhiteConfirmButton(ra, new Rect(0, 0, ra.Width, (int)Math.Round(ra.Height - ra.Height * 0.2)));
                 Sleep(300, ct);
                 return false;
             }
@@ -187,6 +143,81 @@ public class AutoArtifactSalvageTask : ISoloTask
         await Delay(800, ct);
     }
 
+    /// <summary>
+    /// 取背包分类 tab 的选中/未选中元素识别对象。
+    /// </summary>
+    /// <param name="gridScreenName">目标背包分类。</param>
+    /// <returns>(选中元素, 未选中元素)。</returns>
+    /// <exception cref="NotSupportedException">不支持分类时抛出。</exception>
+    private static (RecognitionObject Checked, RecognitionObject Unchecked) GetTabRecognitionObjects(GridScreenName gridScreenName)
+    {
+        return gridScreenName switch
+        {
+            GridScreenName.Weapons => (ElementRecognition.Get("BagWeaponChecked"), ElementRecognition.Get("BagWeaponUnchecked")),
+            GridScreenName.Artifacts => (ElementRecognition.Get("BagArtifactChecked"), ElementRecognition.Get("BagArtifactUnchecked")),
+            GridScreenName.CharacterDevelopmentItems => (ElementRecognition.Get("BagCharacterDevelopmentItemChecked"), ElementRecognition.Get("BagCharacterDevelopmentItemUnchecked")),
+            GridScreenName.Food => (ElementRecognition.Get("BagFoodChecked"), ElementRecognition.Get("BagFoodUnchecked")),
+            GridScreenName.Materials => (ElementRecognition.Get("BagMaterialChecked"), ElementRecognition.Get("BagMaterialUnchecked")),
+            GridScreenName.Gadget => (ElementRecognition.Get("BagGadgetChecked"), ElementRecognition.Get("BagGadgetUnchecked")),
+            GridScreenName.Quest => (ElementRecognition.Get("BagQuestChecked"), ElementRecognition.Get("BagQuestUnchecked")),
+            GridScreenName.PreciousItems => (ElementRecognition.Get("BagPreciousItemChecked"), ElementRecognition.Get("BagPreciousItemUnchecked")),
+            GridScreenName.Furnishings => (ElementRecognition.Get("BagFurnishingChecked"), ElementRecognition.Get("BagFurnishingUnchecked")),
+            _ => throw new NotSupportedException($"背包不支持的界面：{gridScreenName.GetDescription()}")
+        };
+    }
+
+    /// <summary>
+    /// 在已打开的背包界面内，切换到目标分类 tab（不返回主界面）。
+    /// 已在目标 tab 则直接返回；否则点击未选中按钮并等待切换完成。
+    /// </summary>
+    /// <param name="targetTab">目标背包分类。</param>
+    /// <param name="input">输入模拟器。</param>
+    /// <param name="logger">日志记录器。</param>
+    /// <param name="ct">取消令牌。</param>
+    public static async Task SwitchInventoryTab(GridScreenName targetTab, IInputChannel input, ILogger logger, CancellationToken ct)
+    {
+        var (checkedObj, uncheckedObj) = GetTabRecognitionObjects(targetTab);
+
+        // 已在目标 tab 则直接返回
+        using (var ra0 = CaptureToRectArea())
+        using (var checkedBtn0 = ra0.Find(checkedObj))
+        {
+            if (checkedBtn0.IsExist())
+            {
+                return;
+            }
+        }
+
+        // 查找并点击未选中按钮
+        bool clicked = false;
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            using var ra = CaptureToRectArea();
+            using var uncheckedBtn = ra.Find(uncheckedObj);
+            if (uncheckedBtn.IsExist())
+            {
+                uncheckedBtn.Click();
+                clicked = true;
+                break;
+            }
+            await Delay(300, ct);
+        }
+
+        if (!clicked)
+        {
+            logger.LogError("未找到背包中{name}菜单按钮,切换分类失败", targetTab.GetDescription());
+            return;
+        }
+
+        // 等待目标 tab 变为选中状态
+        var switched = await NewRetry.WaitForElementAppear(checkedObj, retryAction: null, ct, maxAttemptCount: 5, retryInterval: 500);
+        if (!switched)
+        {
+            logger.LogWarning("切换到{name}后未能确认已选中,继续尝试扫描", targetTab.GetDescription());
+        }
+        await Delay(800, ct);
+    }
+
     public async Task Start(CancellationToken ct)
     {
         this.ct = ct;
@@ -199,7 +230,7 @@ public class AutoArtifactSalvageTask : ISoloTask
 
         // 点击分解按钮打开分解界面
         using var ra2 = CaptureToRectArea();
-        using var salvageBtn = ra2.Find(ElementAssets.Instance.BtnArtifactSalvage);
+        using var salvageBtn = ra2.Find(ElementRecognition.Get("BtnArtifactSalvage", ra2));
         if (salvageBtn.IsExist())
         {
             salvageBtn.Click();
@@ -258,7 +289,7 @@ public class AutoArtifactSalvageTask : ISoloTask
             }
         }
 
-        using var quickSelectConfirmBtn = ra4.Find(ElementAssets.Instance.BtnWhiteConfirm);
+        using var quickSelectConfirmBtn = ra4.Find(ElementRecognition.Get("BtnWhiteConfirm", ra4));
         if (quickSelectConfirmBtn.IsExist())
         {
             quickSelectConfirmBtn.Click();
@@ -268,7 +299,7 @@ public class AutoArtifactSalvageTask : ISoloTask
 
         // 点击分解
         using var ra5 = CaptureToRectArea();
-        var salvageBtnConfirm = ra5.Find(ElementAssets.Instance.BtnArtifactSalvageConfirm);
+        var salvageBtnConfirm = ra5.Find(ElementRecognition.Get("BtnArtifactSalvageConfirm", ra5));
         if (salvageBtnConfirm.IsExist())
         {
             salvageBtnConfirm.Click();
@@ -307,34 +338,31 @@ public class AutoArtifactSalvageTask : ISoloTask
                 ra5.ClickTo(315, 190);
                 await Delay(1000, ct);
                 // 遍历套装Grid勾选套装
-                using InferenceSession session = GridIconsAccuracyTestTask.LoadModel(out Dictionary<string, float[]> prototypes);
+                using IItemIconRecognizer iconRecognizer = ItemIconRecognizerFactory.CreateConfigured();
                 ArtifactSetFilterScreen gridScreen = new ArtifactSetFilterScreen(new GridParams(new Rect(40, 100, 1300, 852), 2, 3, 40, 40, 0.024), this.logger, this.ct);
                 string drawKey = "ArtifactSetFilter";
-                var drawRectList = new List<RectDrawable>();
-                var drawTextList = new List<TextDrawable>();
-                gridScreen.OnBeforeScroll += () => { VisionContext.Instance().DrawContent.RemoveRect(drawKey); drawRectList.Clear(); drawTextList.Clear(); };
+                var drawShapes = new List<MaskWindowDrawingShape>();
+                gridScreen.OnBeforeScroll += () => { TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.Clear(drawKey); drawShapes.Clear(); };
                 try
                 {
                     await foreach ((ImageRegion pageRegion, Rect itemRect) in gridScreen)
                     {
                         using ImageRegion itemRegion = pageRegion.DeriveCrop(itemRect);
                         using Mat img125 = GetGridIconsTask.CropResizeArtifactSetFilterGridIcon(itemRegion);
-                        (string? predName, _) = GridIconsAccuracyTestTask.Infer(img125, session, prototypes);
+                        string? predName = iconRecognizer.Recognize(img125);
                         if (predName == null)
                         {
-                            var rectDrawable = itemRegion.SelfToRectDrawable(drawKey);
-                            drawRectList.Add(rectDrawable);
-                            VisionContext.Instance().DrawContent.PutOrRemoveRectList(drawKey, drawRectList);
-                            drawTextList.Add(new TextDrawable("识别失败", new System.Windows.Point(rectDrawable.Rect.X + rectDrawable.Rect.Width / 3, rectDrawable.Rect.Y)));
-                            VisionContext.Instance().DrawContent.TextList.GetOrAdd(drawKey, drawTextList);
+                            var rect = itemRegion.SelfToMaskWindowDrawingRect();
+                            drawShapes.Add(rect);
+                            drawShapes.Add(new MaskWindowDrawingText("识别失败", new System.Windows.Point(rect.Bounds.X + rect.Bounds.Width / 3, rect.Bounds.Y)));
+                            itemRegion.DrawingBoard.Set(drawKey, drawShapes);
                         }
                         else
                         {
-                            var rectDrawable = itemRegion.SelfToRectDrawable(drawKey, System.Drawing.Pens.Lime);
-                            drawRectList.Add(rectDrawable);
-                            VisionContext.Instance().DrawContent.PutOrRemoveRectList(drawKey, drawRectList);
-                            drawTextList.Add(new TextDrawable(predName, new System.Windows.Point(rectDrawable.Rect.X + rectDrawable.Rect.Width / 3, rectDrawable.Rect.Y)));
-                            VisionContext.Instance().DrawContent.TextList.GetOrAdd(drawKey, drawTextList);
+                            var rect = itemRegion.SelfToMaskWindowDrawingRect(System.Drawing.Pens.Lime);
+                            drawShapes.Add(rect);
+                            drawShapes.Add(new MaskWindowDrawingText(predName, new System.Windows.Point(rect.Bounds.X + rect.Bounds.Width / 3, rect.Bounds.Y)));
+                            itemRegion.DrawingBoard.Set(drawKey, drawShapes);
                             if (this.artifactSetFilter.Contains(predName))
                             {
                                 itemRegion.Click();
@@ -345,7 +373,7 @@ public class AutoArtifactSalvageTask : ISoloTask
                 }
                 finally
                 {
-                    VisionContext.Instance().DrawContent.ClearAll();
+                    TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.ClearAll();
                 }
                 // 点击确认筛选
                 using var confirmFilterBtnRegion = CaptureToRectArea();
@@ -381,7 +409,7 @@ public class AutoArtifactSalvageTask : ISoloTask
         GridParams gridParams = GridParams.Templates[GridScreenName.ArtifactSalvage];
         GridScreen gridScreen = new GridScreen(gridParams, this.logger, this.ct); // 圣遗物分解Grid有4行9列
         gridScreen.OnAfterTurnToNewPage += GridScreen.DrawItemsAfterTurnToNewPage;
-        gridScreen.OnBeforeScroll += () => VisionContext.Instance().DrawContent.ClearAll();
+        gridScreen.OnBeforeScroll += () => TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.ClearAll();
         try
         {
             await foreach ((ImageRegion pageRegion, Rect itemRect) in gridScreen)
@@ -442,7 +470,7 @@ public class AutoArtifactSalvageTask : ISoloTask
         }
         finally
         {
-            VisionContext.Instance().DrawContent.ClearAll();
+            TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.ClearAll();
         }
     }
 

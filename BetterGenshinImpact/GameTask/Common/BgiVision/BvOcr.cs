@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGenshinImpact.Core.Recognition;
@@ -17,7 +17,7 @@ public static partial class Bv
 {
     public static string FindFKeyText(ImageRegion region)
     {
-        using var foundRectArea = region.Find(AutoPickAssets.Instance.PickRo);
+        using var foundRectArea = region.Find(AutoPickAssets.Get(region, TaskContext.Instance().Config.AutoPickConfig.PickKey).PickRo);
         if (foundRectArea.IsEmpty())
         {
             return string.Empty;
@@ -33,13 +33,13 @@ public static partial class Bv
             return string.Empty;
         }
 
-        var textMat = new Mat(region.SrcMat, textRect);
+        using var textMat = new Mat(region.SrcMat, textRect);
         var boundingRect = AutoPickTrigger.GetWhiteTextBoundingRect(textMat);
         // 如果找到有效区域
         if (boundingRect.Width > 5 && boundingRect.Height > 5)
         {
             // 截取只包含文字的区域
-            var textOnlyMat = new Mat(textMat, new Rect(0, 0,
+            using var textOnlyMat = new Mat(textMat, new Rect(0, 0,
                 boundingRect.Right + 3 < textMat.Width ? boundingRect.Right + 3 : textMat.Width, textMat.Height));
             return OcrFactory.Paddle.OcrWithoutDetector(textOnlyMat);
         }

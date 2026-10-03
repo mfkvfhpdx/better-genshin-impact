@@ -1,6 +1,6 @@
-﻿using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Input;
 using BetterGenshinImpact.Core.Recorder;
-using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask;
 using BetterGenshinImpact.Model;
 using Gma.System.MouseKeyHook;
@@ -15,8 +15,10 @@ using Timer = System.Timers.Timer;
 using BetterGenshinImpact.Platform.Wine;
 namespace BetterGenshinImpact.Core.Monitor;
 
-public partial class  MouseKeyMonitor
+public partial class MouseKeyMonitor : IDisposable
 {
+    private bool _isSubscribed;
+    private bool _disposed;
 
     /// <summary>
     ///     长按F变F连发
@@ -64,23 +66,16 @@ public partial class  MouseKeyMonitor
             return _globalHook;
         }
     }
-    private nint _hWnd;
+    public MouseKeyMonitor()
+    {
+        _spaceTimer.Elapsed += OnSpaceTimerElapsed;
+        _fTimer.Elapsed += OnFTimerElapsed;
+    }
 
     public void Subscribe(nint gameHandle)
     {
-        _hWnd = gameHandle;
-        // Note: for the application hook, use the Hook.AppEvents() instead
-
-        if (!WinePlatformAddon.IsRunningOnWine) {        
-            GlobalHook.KeyDown += GlobalHookKeyDown;
-            GlobalHook.KeyUp += GlobalHookKeyUp;
-            GlobalHook.MouseDownExt += GlobalHookMouseDownExt;
-            GlobalHook.MouseUpExt += GlobalHookMouseUpExt;
-            GlobalHook.MouseMoveExt += GlobalHookMouseMoveExt;
-            GlobalHook.MouseWheelExt += GlobalHookMouseWheelExt;
-        }
-        TrySubscribeWinePolling();
-        //_globalHook.KeyPress += GlobalHookKeyPress;
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        // 按键经 InputHub.Background 发往 TaskContext.Init 绑定的游戏窗口，gameHandle 与其相同
 
         _pickUpKey = TaskContext.Instance().Config.KeyBindingsConfig.PickUpOrInteract.ToWinFormKeys();
         _pickUpKeyCode = TaskContext.Instance().Config.KeyBindingsConfig.PickUpOrInteract.ToVK();
@@ -90,17 +85,51 @@ public partial class  MouseKeyMonitor
         _firstSpaceKeyDownTime = DateTime.MaxValue;
         var si = TaskContext.Instance().Config.MacroConfig.SpaceFireInterval;
         _spaceTimer.Interval = si;
-        _spaceTimer.Elapsed += (sender, args) => { Simulation.PostMessage(_hWnd).KeyPress(_releaseControlKeyCode); };
 
         var fi = TaskContext.Instance().Config.MacroConfig.FFireInterval;
         _fTimer.Interval = fi;
-        _fTimer.Elapsed += (sender, args) => { Simulation.PostMessage(_hWnd).KeyPress(_pickUpKeyCode); };
+
+        // 开关禁用时不装键鼠监听
+        if (TaskContext.Instance().Config.DisableInputMonitor)
+        {
+            if (_isSubscribed) Unsubscribe();
+            return;
+        }
+
+        if (_isSubscribed)
+        {
+            return;
+        }
+
+        // Note: for the application hook, use the Hook.AppEvents() instead
+        if (!WinePlatformAddon.IsRunningOnWine)
+        {
+            GlobalHook.KeyDown += GlobalHookKeyDown;
+            GlobalHook.KeyUp += GlobalHookKeyUp;
+            GlobalHook.MouseDownExt += GlobalHookMouseDownExt;
+            GlobalHook.MouseUpExt += GlobalHookMouseUpExt;
+            GlobalHook.MouseMoveExt += GlobalHookMouseMoveExt;
+            GlobalHook.MouseWheelExt += GlobalHookMouseWheelExt;
+        }
+        TrySubscribeWinePolling();
+        //_globalHook.KeyPress += GlobalHookKeyPress;
+        _isSubscribed = true;
+    }
+
+    private void OnSpaceTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        InputHub.Background.Keyboard.KeyPress(_releaseControlKeyCode);
+    }
+
+    private void OnFTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        InputHub.Background.Keyboard.KeyPress(_pickUpKeyCode);
     }
 
     private void GlobalHookKeyDown(object? sender, KeyEventArgs e)
     {
         // Debug.WriteLine("KeyDown: \t{0}", e.KeyCode);
-        GlobalKeyMouseRecord.Instance.GlobalHookKeyDown(e, Kernel32.GetTickCount());
+        GlobalKeyMouseRecord.Instance.GlobalHookKeyDown(e, DateTime.UtcNow);
 
         if (SystemControl.IsGenshinImpactActive())
         {
@@ -143,7 +172,7 @@ public partial class  MouseKeyMonitor
     private void GlobalHookKeyUp(object? sender, KeyEventArgs e)
     {
         // Debug.WriteLine("KeyUp: \t{0}", e.KeyCode);
-        GlobalKeyMouseRecord.Instance.GlobalHookKeyUp(e, Kernel32.GetTickCount());
+        GlobalKeyMouseRecord.Instance.GlobalHookKeyUp(e, DateTime.UtcNow);
 
         // 热键松开事件
         HotKeyUp(sender, e);
@@ -188,7 +217,7 @@ public partial class  MouseKeyMonitor
     private void GlobalHookMouseDownExt(object? sender, MouseEventExtArgs e)
     {
         // Debug.WriteLine("MouseDown: {0}; \t Location: {1};\t System Timestamp: {2}", e.Button, e.Location, e.Timestamp);
-        GlobalKeyMouseRecord.Instance.GlobalHookMouseDown(e);
+        GlobalKeyMouseRecord.Instance.GlobalHookMouseDown(e, DateTime.UtcNow);
 
         if (e.Button != MouseButtons.Left)
             if (MouseHook.AllMouseHooks.TryGetValue(e.Button, out var hook))
@@ -198,7 +227,7 @@ public partial class  MouseKeyMonitor
     private void GlobalHookMouseUpExt(object? sender, MouseEventExtArgs e)
     {
         // Debug.WriteLine("MouseUp: {0}; \t Location: {1};\t System Timestamp: {2}", e.Button, e.Location, e.Timestamp);
-        GlobalKeyMouseRecord.Instance.GlobalHookMouseUp(e);
+        GlobalKeyMouseRecord.Instance.GlobalHookMouseUp(e, DateTime.UtcNow);
 
         if (e.Button != MouseButtons.Left)
             if (MouseHook.AllMouseHooks.TryGetValue(e.Button, out var hook))
@@ -208,17 +237,27 @@ public partial class  MouseKeyMonitor
     private void GlobalHookMouseMoveExt(object? sender, MouseEventExtArgs e)
     {
         // Debug.WriteLine("MouseMove: {0}; \t Location: {1};\t System Timestamp: {2}", e.Button, e.Location, e.Timestamp);
-        GlobalKeyMouseRecord.Instance.GlobalHookMouseMoveTo(e);
+        GlobalKeyMouseRecord.Instance.GlobalHookMouseMoveTo(e, DateTime.UtcNow);    
     }
     
     private void GlobalHookMouseWheelExt(object? sender, MouseEventExtArgs e)
     {
         // Debug.WriteLine("MouseMove: {0}; \t Location: {1};\t Delta: {2};\t System Timestamp: {3}", e.Button, e.Location, e.Delta, e.Timestamp);
-        GlobalKeyMouseRecord.Instance.GlobalHookMouseWheel(e);
+        GlobalKeyMouseRecord.Instance.GlobalHookMouseWheel(e, DateTime.UtcNow);
     }
 
     public void Unsubscribe()
     {
+        _spaceTimer.Stop();
+        _fTimer.Stop();
+        _firstSpaceKeyDownTime = DateTime.MaxValue;
+        _firstFKeyDownTime = DateTime.MaxValue;
+
+        if (!_isSubscribed)
+        {
+            return;
+        }
+
         if (_globalHook != null && !WinePlatformAddon.IsRunningOnWine)
         {
             _globalHook.KeyDown -= GlobalHookKeyDown;
@@ -234,5 +273,22 @@ public partial class  MouseKeyMonitor
         if (WinePlatformAddon.IsRunningOnWine){
           DisposeWineAddon();
         }
+        _isSubscribed = false;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _disposed = true;
+        _spaceTimer.Elapsed -= OnSpaceTimerElapsed;
+        _fTimer.Elapsed -= OnFTimerElapsed;
+        _spaceTimer.Dispose();
+        _fTimer.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

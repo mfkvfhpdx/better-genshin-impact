@@ -1,7 +1,6 @@
-using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
 using BetterGenshinImpact.GameTask.Common;
 using BetterGenshinImpact.GameTask.Model.Area;
-using Fischless.WindowsInput;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using System;
@@ -21,14 +20,14 @@ namespace BetterGenshinImpact.GameTask.Model.GameUI
         private readonly Rect roi;
         private readonly CancellationToken ct;
         private readonly ILogger logger;
-        private readonly InputSimulator input = Simulation.SendInput;
+        private readonly IInputChannel input;
         private readonly int columns;
         private readonly int s1Round;
         private readonly int roundMilliseconds;
         private readonly int s2Round;
         private readonly double s3Scale;
 
-        internal GridScroller(GridParams @params, ILogger logger, InputSimulator input, CancellationToken ct)
+        internal GridScroller(GridParams @params, ILogger logger, IInputChannel input, CancellationToken ct)
         {
             this.roi = @params.Roi;
             this.ct = ct;
@@ -71,7 +70,13 @@ namespace BetterGenshinImpact.GameTask.Model.GameUI
                     await TaskControl.Delay(60, ct);
                     using var ra4 = TaskControl.CaptureToRectArea();
                     using ImageRegion grid2 = ra4.DeriveCrop(this.roi);
-                    IEnumerable<Rect> gridItems2 = GetGridItems(grid2.SrcMat, this.columns);
+                    var gridItems2 = GetGridItems(grid2.SrcMat, this.columns).ToList();
+                    if (gridItems2.Count == 0)
+                    {
+                        this.logger.LogDebug("滚动过程中暂未检测到网格项，等待下一帧");
+                        continue;
+                    }
+
                     if (gridItems2.Min(i => i.Y) > (ra4.Width * this.s3Scale))  // 最后精细滚动，保证完整地显示最多行
                     {
                         input.Mouse.VerticalScroll(-1);

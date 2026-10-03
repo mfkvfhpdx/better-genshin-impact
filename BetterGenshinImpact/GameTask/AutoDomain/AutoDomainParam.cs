@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using BetterGenshinImpact.GameTask.Model;
+using BetterGenshinImpact.GameTask.AutoFight;
 using BetterGenshinImpact.Core.Config;
 
 namespace BetterGenshinImpact.GameTask.AutoDomain;
@@ -51,6 +52,11 @@ public class AutoDomainParam : BaseTaskParam<AutoDomainTask>
     // 使用脆弱树脂刷取副本次数
     public int FragileResinUseCount { get; set; } = 0;
 
+    /// <summary>
+    /// 是否启用奖励名称识别。默认关闭。
+    /// </summary>
+    public bool RewardRecognitionEnabled { get; set; } = false;
+
     public AutoDomainParam(int domainRoundNum, string path) : base(null, null)
     {
         DomainRoundNum = domainRoundNum;
@@ -79,6 +85,7 @@ public class AutoDomainParam : BaseTaskParam<AutoDomainTask>
         SpecifyResinUse = config.SpecifyResinUse;
         OriginalResin20UseCount = config.OriginalResin20UseCount;
         OriginalResin40UseCount = config.OriginalResin40UseCount;
+        RewardRecognitionEnabled = config.RewardRecognitionEnabled;
     }
 
     public AutoDomainParam(int domainRoundNum = 0) : base(null, null)
@@ -108,8 +115,14 @@ public class AutoDomainParam : BaseTaskParam<AutoDomainTask>
         {
             return Global.Absolute(@"User\AutoFight\");
         }
-
-        return Global.Absolute(@"User\AutoFight\" + strategyName + ".txt");
+        else if (AutoFightParam.ComboStrategyName.Equals(strategyName))
+        {
+            return AutoFightParam.ComboStrategyName;
+        }
+        else
+        {
+            return Global.Absolute(@"User\AutoFight\" + strategyName + ".txt");
+        }
     }
 
     public void SetResinPriorityList(params string[] priorities)

@@ -1,4 +1,5 @@
 using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Recognition.OCR;
 using BetterGenshinImpact.Core.Script;
 using BetterGenshinImpact.GameTask;
@@ -14,6 +15,7 @@ using BetterGenshinImpact.ViewModel.Pages;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DeviceId;
+using Fischless.GameCapture;
 using Fischless.GameCapture.BitBlt;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
@@ -26,11 +28,16 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using BetterGenshinImpact.Helpers.Http;
+using BetterGenshinImpact.Service.ChildSession;
+using BetterGenshinImpact.Service.Instance;
 using BetterGenshinImpact.ViewModel.Windows;
+using Newtonsoft.Json;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
 
@@ -43,7 +50,10 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly IConfigService _configService;
     private readonly INavigationService _navigationService;
+    private readonly ChildSessionService _childSessionService;
     public string Title => $"BetterGI · 更好的原神 · {Global.Version}{(RuntimeHelper.IsDebug ? " · Dev" : string.Empty)}";
+    public bool IsChildSessionInstance =>
+        InstanceBootstrap.Current.Context.InstanceType == BetterGiInstanceType.ChildSession;
 
     [ObservableProperty] private bool _isVisible = true;
 
@@ -54,19 +64,102 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
     [ObservableProperty] private bool _isWin11Later = OsVersionHelper.IsWindows11_OrGreater;
     
     [ObservableProperty] private Brush _redeemCodeButtonForeground = Brushes.White;
-    
-    private string? _redeemCodeUpdateNewVersion;
+
+    private string? _redeemCodeCnUpdateNewVersion;
+
+    private string? _redeemCodeGlobalUpdateNewVersion;
+
+    private CancellationTokenSource? _redeemCodeDismissCts;
+
+    private bool HasPendingRedeemCodeUpdate => _redeemCodeCnUpdateNewVersion != null || _redeemCodeGlobalUpdateNewVersion != null;
+
+    [ObservableProperty] private bool _isRedeemCodeInfoBarOpen;
+
+    /// <summary>
+    /// 主窗口自定义背景图源，null 表示未加载或加载失败
+    /// </summary>
+    [ObservableProperty] private ImageSource? _mainBackgroundSource;
+
+    /// <summary>
+    /// 主窗口自定义背景图是否可见（开关开启且图片加载成功）
+    /// </summary>
+    [ObservableProperty] private bool _isMainBackgroundVisible;
+
+    partial void OnIsRedeemCodeInfoBarOpenChanged(bool value)
+    {
+        if (!value)
+        {
+            // 取消自动消失计时器
+            _redeemCodeDismissCts?.Cancel();
+            _redeemCodeDismissCts?.Dispose();
+            _redeemCodeDismissCts = null;
+        }
+    }
 
     private bool _firstActivated = true;
 
     public AllConfig Config { get; set; }
 
-    public MainWindowViewModel(INavigationService navigationService, IConfigService configService)
+    public MainWindowViewModel(
+        INavigationService navigationService,
+        IConfigService configService,
+        ChildSessionService childSessionService)
     {
         _navigationService = navigationService;
         _configService = configService;
+        _childSessionService = childSessionService;
         Config = _configService.Get();
         _logger = App.GetLogger<MainWindowViewModel>();
+        // 订阅通用配置变更：设置页修改背景图路径或开关后，主窗口背景实时刷新
+        Config.CommonConfig.PropertyChanged += OnCommonConfigPropertyChanged;
+        LoadMainBackground();
+    }
+
+    private void OnCommonConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        // 仅在背景图相关配置变化时重新加载，避免无关配置变更触发图片 IO
+        if (e.PropertyName is nameof(CommonConfig.MainBackgroundImagePath)
+            or nameof(CommonConfig.MainBackgroundEnabled))
+        {
+            LoadMainBackground();
+        }
+    }
+
+    /// <summary>
+    /// 加载主窗口自定义背景图。
+    /// 使用 CacheOption.OnLoad 立即读入内存，不锁定图片文件，方便用户随时替换或删除图片。
+    /// 加载失败（文件被删/格式损坏）时静默降级为隐藏背景，不弹窗打断用户。
+    /// </summary>
+    private void LoadMainBackground()
+    {
+        ImageSource? source = null;
+        var path = Config.CommonConfig.MainBackgroundImagePath;
+        if (Config.CommonConfig.MainBackgroundEnabled && !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            try
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                bitmap.UriSource = new Uri(path, UriKind.Absolute);
+                // 以虚拟屏幕（多显示器总范围）宽度为解码上限：
+                // 背景最多铺满屏幕，超过该宽度再高的分辨率也无处可显示，
+                // 限制解码尺寸可避免超大照片同步解码卡 UI 并占用数百 MB 内存；
+                // DecodePixelWidth 不会放大小图（小于该宽度的图片按原始尺寸解码）
+                bitmap.DecodePixelWidth = (int)SystemParameters.VirtualScreenWidth;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                source = bitmap;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"加载主窗口背景图失败：{path}，{ex.Message}");
+            }
+        }
+
+        MainBackgroundSource = source;
+        IsMainBackgroundVisible = source != null;
     }
 
     [RelayCommand]
@@ -201,6 +294,11 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
                 break;
         }
 
+        Wpf.Ui.Violeta.Appearance.SystemMenuThemeManager.Apply(
+            themeType is ThemeType.DarkNone or ThemeType.DarkMica or ThemeType.DarkAcrylic
+                ? Wpf.Ui.Violeta.Appearance.SystemMenuTheme.Dark
+                : Wpf.Ui.Violeta.Appearance.SystemMenuTheme.Light);
+
         // 立即应用主题到当前窗口
         if (Application.Current.MainWindow != null)
         {
@@ -208,7 +306,7 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
         }
 
         // 根据当前主题更新兑换码按钮的默认前景色（若无更新高亮）
-        if (_redeemCodeUpdateNewVersion == null)
+        if (!HasPendingRedeemCodeUpdate)
         {
             UpdateRedeemCodeButtonDefaultForeground();
         }
@@ -217,6 +315,15 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
     [RelayCommand]
     private void OnClosing(CancelEventArgs e)
     {
+        if (_childSessionService.HasActiveChildSession())
+        {
+            e.Cancel = true;
+            ThemedMessageBox.Warning(
+                "桌面分身仍在运行，请先关闭桌面分身，再关闭主窗口。",
+                "桌面分身未关闭");
+            return;
+        }
+
         if (Config.CommonConfig.ExitToTray)
         {
             e.Cancel = true;
@@ -227,16 +334,52 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
     [RelayCommand]
     private void OnOpenFeed()
     {
-        if (_redeemCodeUpdateNewVersion != null)
+        if (HasPendingRedeemCodeUpdate)
         {
-            Config.CommonConfig.RedeemCodeFeedsUpdateVersion = _redeemCodeUpdateNewVersion;
+            if (_redeemCodeCnUpdateNewVersion != null)
+            {
+                Config.CommonConfig.RedeemCodeFeedsUpdateVersion = _redeemCodeCnUpdateNewVersion;
+                _redeemCodeCnUpdateNewVersion = null;
+            }
+
+            if (_redeemCodeGlobalUpdateNewVersion != null)
+            {
+                Config.CommonConfig.RedeemCodeGlobalFeedsUpdateVersion = _redeemCodeGlobalUpdateNewVersion;
+                _redeemCodeGlobalUpdateNewVersion = null;
+            }
+
             // 重置为主题默认前景色，避免浅色主题下显示为白色
             UpdateRedeemCodeButtonDefaultForeground();
-            _redeemCodeUpdateNewVersion = null;
         }
+
+        // 关闭通知卡片
+        IsRedeemCodeInfoBarOpen = false;
 
         var feedWindow = new FeedWindow(new FeedWindowViewModel());
         feedWindow.Show();
+    }
+
+    [RelayCommand]
+    private void OnDismissRedeemCode()
+    {
+        // 仅关闭通知卡片并标记已读，不打开窗口
+        IsRedeemCodeInfoBarOpen = false;
+    }
+
+    private async Task AutoDismissRedeemCodeCardAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(20), ct);
+            if (IsRedeemCodeInfoBarOpen)
+            {
+                IsRedeemCodeInfoBarOpen = false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 计时器被取消（用户手动关闭卡片），无需处理
+        }
     }
 
     [RelayCommand]
@@ -246,6 +389,26 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
         // 应用上次保存的主题
         ApplyTheme(Config.CommonConfig.CurrentThemeType);
 
+        // 非主实例仅应用自身窗口主题；后续迁移、检查更新等启动操作由主实例统一执行。
+        if (!InstanceBootstrap.Current.Context.IsRoot)
+        {
+            return;
+        }
+
+        // 版本是否运行过
+        if (Config.CommonConfig.RunForVersion != Global.Version)
+        {
+            ModifyFolderSecurity();
+
+            // alpha 版本用户每次升级后默认切换到 V6 OCR 模型
+            if (Global.Version.Contains("alpha", StringComparison.OrdinalIgnoreCase)
+                && Config.OtherConfig.OcrConfig.PaddleOcrModelConfig != PaddleOcrModelConfig.V6)
+            {
+                Config.OtherConfig.OcrConfig.PaddleOcrModelConfig = PaddleOcrModelConfig.V6;
+            }
+
+            Config.CommonConfig.RunForVersion = Global.Version;
+        }
 
         // 预热OCR
         await OcrPreheating();
@@ -276,13 +439,6 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
             Config.CommonConfig.IsFirstRun = false;
         }
 
-        // 版本是否运行过
-        if (Config.CommonConfig.RunForVersion != Global.Version)
-        {
-            ModifyFolderSecurity();
-            Config.CommonConfig.RunForVersion = Global.Version;
-        }
-
         OnceRun();
 
         // 检查更新
@@ -292,7 +448,9 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
         await CheckRedeemCodeFeedsUpdateAsync();
 
         //  Win11下 BitBlt截图方式不可用，需要关闭窗口优化功能
-        if (OsVersionHelper.IsWindows11_OrGreater && TaskContext.Instance().Config.AutoFixWin11BitBlt)
+        if (OsVersionHelper.IsWindows11_OrGreater
+            && Config.AutoFixWin11BitBlt
+            && Config.CaptureMode == nameof(CaptureModes.BitBlt))
         {
             BitBltRegistryHelper.SetDirectXUserGlobalSettings();
         }
@@ -308,7 +466,6 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
         // 清理临时目录
         TempManager.CleanUp();
     }
-
 
     private void ModifyFolderSecurity()
     {
@@ -468,23 +625,42 @@ public partial class MainWindowViewModel : ObservableObject, IViewModel
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, "https://cnb.cool/bettergi/genshin-redeem-code/-/git/raw/main/update_time.txt");
+            var request = new HttpRequestMessage(HttpMethod.Get, FeedWindowViewModel.CodesJsonUrl);
             var response = await HttpClientFactory.GetCommonSendClient().SendAsync(request);
             response.EnsureSuccessStatusCode();
-            var txt = await response.Content.ReadAsStringAsync();
+            var json = await response.Content.ReadAsStringAsync();
+            var items = JsonConvert.DeserializeObject<List<FeedItem>>(json) ?? [];
+            var (cnFeeds, globalFeeds) = FeedWindowViewModel.SplitByServer(items);
 
-
-            if (!string.IsNullOrEmpty(txt))
+            var hasUpdate = false;
+            var cnVersion = FeedWindowViewModel.GetFeedVersion(cnFeeds);
+            if (Config.CommonConfig.RedeemCodeCnFeedsNotificationEnabled
+                && !string.IsNullOrEmpty(cnVersion)
+                && cnVersion != Config.CommonConfig.RedeemCodeFeedsUpdateVersion)
             {
-                if (long.TryParse(txt, out long v2) 
-                    && long.TryParse(Config.CommonConfig.RedeemCodeFeedsUpdateVersion, out long v1))
-                {
-                    if (v2 > v1)
-                    {
-                        RedeemCodeButtonForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E9BFA"));
-                        _redeemCodeUpdateNewVersion = txt;
-                    }
-                }
+                _redeemCodeCnUpdateNewVersion = cnVersion;
+                hasUpdate = true;
+            }
+
+            var globalVersion = FeedWindowViewModel.GetFeedVersion(globalFeeds);
+            if (Config.CommonConfig.RedeemCodeGlobalFeedsNotificationEnabled
+                && !string.IsNullOrEmpty(globalVersion)
+                && globalVersion != Config.CommonConfig.RedeemCodeGlobalFeedsUpdateVersion)
+            {
+                _redeemCodeGlobalUpdateNewVersion = globalVersion;
+                hasUpdate = true;
+            }
+
+            if (hasUpdate)
+            {
+                RedeemCodeButtonForeground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E9BFA"));
+                // 显示通知卡片
+                IsRedeemCodeInfoBarOpen = true;
+                // 取消旧计时器，启动新的自动消失计时器
+                _redeemCodeDismissCts?.Cancel();
+                _redeemCodeDismissCts?.Dispose();
+                _redeemCodeDismissCts = new CancellationTokenSource();
+                _ = AutoDismissRedeemCodeCardAsync(_redeemCodeDismissCts.Token);
             }
             
         }

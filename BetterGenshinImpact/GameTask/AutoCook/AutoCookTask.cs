@@ -1,4 +1,4 @@
-using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using BetterGenshinImpact.GameTask.Model.Area;
 using Microsoft.Extensions.Logging;
@@ -63,7 +63,7 @@ public class AutoCookTask : ISoloTask
                 {
                     if (stopTaskWhenRecoverButtonDetected)
                     {
-                        var e = captureRegion.Find(ElementAssets.Instance.BtnWhiteRecover);
+                        var e = captureRegion.Find(ElementRecognition.Get("BtnWhiteRecover", captureRegion));
                         if (e.IsExist())
                         {
                             _logger.LogInformation("自动烹饪：{Text}", "检测到自动烹饪按钮，结束任务");
@@ -86,7 +86,7 @@ public class AutoCookTask : ISoloTask
                 {
                     if (currentColorCount <= peakColorCount.Value - triggerDropCount)
                     {
-                        Simulation.SendInput.Keyboard.KeyPress(User32.VK.VK_SPACE);
+                        InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_SPACE);
                         _logger.LogInformation("自动烹饪：{Text}", $"烹饪条像素数量较峰值下降超过{triggerDropCount}，按下空格。峰值:{peakColorCount.Value} 当前:{currentColorCount}");
                         ResetPeakState(ref peakColorCount, ref peakCandidate, ref peakCandidateStableFrames);
                     }
@@ -157,7 +157,7 @@ public class AutoCookTask : ISoloTask
 
     private bool IsInCookUi(ImageRegion captureRegion)
     {
-        using var cookIcon = captureRegion.Find(ElementAssets.Instance.UiLeftTopCookIcon);
+        using var cookIcon = captureRegion.Find(ElementRecognition.Get("UiLeftTopCookIcon", captureRegion));
         return cookIcon.IsExist();
     }
 

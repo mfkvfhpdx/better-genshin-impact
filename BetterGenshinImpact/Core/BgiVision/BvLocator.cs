@@ -21,19 +21,38 @@ public class BvLocator
 {
     private static readonly ILogger Logger = App.GetLogger<BvLocator>();
     private readonly CancellationToken _cancellationToken;
+    private readonly IReadOnlyList<string> _anyTexts;
+    private int? _timeout;
+    private int? _retryInterval;
 
     public RecognitionObject RecognitionObject { get; }
 
-    public Action<List<Region>>? RetryAction { get; set; }
+    public Func<List<Region>, Task>? RetryAction { get; set; }
 
     public static int DefaultTimeout { get; set; } = 10000;
 
     public static int DefaultRetryInterval { get; set; } = 250;
 
     public BvLocator(RecognitionObject recognitionObject, CancellationToken cancellationToken)
+        : this(recognitionObject, cancellationToken, [])
+    {
+    }
+
+    internal BvLocator(
+        RecognitionObject recognitionObject,
+        CancellationToken cancellationToken,
+        IReadOnlyList<string> anyTexts)
     {
         RecognitionObject = recognitionObject.Clone();
         _cancellationToken = cancellationToken;
+        _anyTexts = anyTexts.ToArray();
+    }
+
+    internal IReadOnlyList<string> AnyTexts => _anyTexts;
+
+    internal BvLocator Clone()
+    {
+        return new BvLocator(RecognitionObject, _cancellationToken, _anyTexts);
     }
 
     /// <summary>
@@ -45,7 +64,11 @@ public class BvLocator
     public List<Region> FindAll()
     {
         using var screen = CaptureToRectArea();
+        return FindAll(screen);
+    }
 
+    internal List<Region> FindAll(ImageRegion screen)
+    {
         if (RecognitionObject.RecognitionType == RecognitionTypes.TemplateMatch)
         {
             var region = screen.Find(RecognitionObject);
@@ -59,17 +82,28 @@ public class BvLocator
         else if (RecognitionObject.RecognitionType == RecognitionTypes.Ocr)
         {
             var results = screen.FindMulti(RecognitionObject);
-            if (!string.IsNullOrEmpty(RecognitionObject.Text))
-            {
-                return results.FindAll(r => r.Text.Contains(RecognitionObject.Text));
-            }
-
-            return results;
+            return FilterOcrResults(results, _anyTexts, RecognitionObject.Text);
         }
         else
         {
             throw new NotSupportedException($"不被 Locator 支持的识别类型: {RecognitionObject.RecognitionType}");
         }
+    }
+
+    internal static List<Region> FilterOcrResults(
+        List<Region> results,
+        IReadOnlyList<string> anyTexts,
+        string text)
+    {
+        if (anyTexts.Count > 0)
+        {
+            return results.FindAll(region =>
+                anyTexts.Any(candidate => region.Text.Contains(candidate, StringComparison.Ordinal)));
+        }
+
+        return string.IsNullOrEmpty(text)
+            ? results
+            : results.FindAll(region => region.Text.Contains(text, StringComparison.Ordinal));
     }
 
     public bool IsExist()
@@ -85,7 +119,7 @@ public class BvLocator
     public async Task<Region> ClickUntilDisappears(int? timeout = null)
     {
         var region = (await WaitFor(timeout)).First().Click();
-        await new BvLocator(RecognitionObject, _cancellationToken)
+        await Clone()
             .WithRetryAction(resList => { resList.First().Click(); }).WaitForDisappear();
         return region;
     }
@@ -98,17 +132,21 @@ public class BvLocator
 
     public async Task<List<Region>> WaitFor(int? timeout = null)
     {
-        var actualTimeout = timeout ?? DefaultTimeout;
-        var retryCount = actualTimeout / DefaultRetryInterval;
+        var actualTimeout = timeout ?? _timeout ?? DefaultTimeout;
+        var actualRetryInterval = _retryInterval ?? DefaultRetryInterval;
+        var retryCount = Math.Max(1, actualTimeout / actualRetryInterval);
 
         List<Region> results = [];
-        var retryRes = await NewRetry.WaitForAction(() =>
+        var retryRes = await NewRetry.WaitForAction(async () =>
         {
             results = FindAll();
             var b = results.Count > 0;
-            RetryAction?.Invoke(results);
+            if (!b && RetryAction != null)
+            {
+                await RetryAction(results);
+            }
             return b;
-        }, _cancellationToken, retryCount, DefaultRetryInterval);
+        }, _cancellationToken, retryCount, actualRetryInterval);
 
         if (retryRes)
         {
@@ -124,6 +162,12 @@ public class BvLocator
     {
         if (RecognitionObject.RecognitionType == RecognitionTypes.Ocr)
         {
+            if (_anyTexts.Count > 0)
+            {
+                return new TimeoutException(
+                    $"识别任意文字[{string.Join('|', _anyTexts)}]在 {actualTimeout}ms 后超时未出现！");
+            }
+
             return new TimeoutException($"识别文字[{RecognitionObject.Text}]在 {actualTimeout}ms 后超时未出现！");
         }
         else if (RecognitionObject.RecognitionType == RecognitionTypes.TemplateMatch)
@@ -150,20 +194,21 @@ public class BvLocator
 
     public async Task WaitForDisappear(int? timeout = null)
     {
-        var actualTimeout = timeout ?? DefaultTimeout;
-        var retryCount = actualTimeout / DefaultRetryInterval;
+        var actualTimeout = timeout ?? _timeout ?? DefaultTimeout;
+        var actualRetryInterval = _retryInterval ?? DefaultRetryInterval;
+        var retryCount = Math.Max(1, actualTimeout / actualRetryInterval);
 
-        var retryRes = await NewRetry.WaitForAction(() =>
+        var retryRes = await NewRetry.WaitForAction(async () =>
         {
             var results = FindAll();
             var b = results.Count == 0;
-            if (!b)
+            if (!b && RetryAction != null)
             {
-                RetryAction?.Invoke(results);
+                await RetryAction(results);
             }
 
             return b;
-        }, _cancellationToken, retryCount, DefaultRetryInterval);
+        }, _cancellationToken, retryCount, actualRetryInterval);
 
         if (!retryRes)
         {
@@ -205,7 +250,77 @@ public class BvLocator
 
     public BvLocator WithRetryAction(Action<List<Region>>? action)
     {
-        RetryAction = action;
+        if (action == null)
+        {
+            RetryAction = null;
+        }
+        else
+        {
+            RetryAction = (results) =>
+            {
+                action(results);
+                return Task.CompletedTask;
+            };
+        }
         return this;
     }
+
+    /// <summary>
+    /// 设置超时时间（毫秒）
+    /// </summary>
+    /// <param name="timeout">超时时间（毫秒）</param>
+    /// <returns></returns>
+    public BvLocator WithTimeout(int timeout)
+    {
+        if (timeout <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), "timeout 必须大于 0");
+        }
+        _timeout = timeout;
+        return this;
+    }
+
+    /// <summary>
+    /// 设置重试间隔（毫秒）
+    /// </summary>
+    /// <param name="retryInterval">重试间隔（毫秒）</param>
+    /// <returns></returns>
+    public BvLocator WithRetryInterval(int retryInterval)
+    {
+        if (retryInterval <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(retryInterval), "retryInterval 必须大于 0");
+        }
+        _retryInterval = retryInterval;
+        return this;
+    }
+
+    /// <summary>
+    /// 为 JavaScript 提供的动态参数重载
+    /// 解决 ClearScript 无法将 JS 函数隐式转换为 Action 委托的问题
+    /// 支持同步和异步 JS 函数
+    /// </summary>
+    /// <param name="action">JS 回调函数</param>
+    /// <returns></returns>
+    public BvLocator WithRetryAction(dynamic action)
+    {
+        if (action == null)
+        {
+            RetryAction = null;
+        }
+        else
+        {
+            RetryAction = async (results) =>
+            {
+                var taskResult = action(results);
+                // 如果 JS 返回的是 Promise/Task，等待其完成
+                if (taskResult is Task task)
+                {
+                    await task;
+                }
+            };
+        }
+        return this;
+    }
+
 }

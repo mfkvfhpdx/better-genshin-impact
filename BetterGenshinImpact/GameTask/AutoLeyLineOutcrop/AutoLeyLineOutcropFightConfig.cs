@@ -27,16 +27,19 @@ public partial class AutoLeyLineOutcropFightConfig : ObservableObject
     [Serializable]
     public partial class FightFinishDetectConfig : ObservableObject
     {
-        [ObservableProperty] private string _battleEndProgressBarColor = "";
-        [ObservableProperty] private string _battleEndProgressBarColorTolerance = "";
         [ObservableProperty] private bool _fastCheckEnabled = false;
         [ObservableProperty] private bool _rotateFindEnemyEnabled = false;
         [ObservableProperty] private string _fastCheckParams = "";
+        [ObservableProperty] private bool _checkAfterSwitchAvatar = false;
         [ObservableProperty] private string _checkEndDelay = "";
         [ObservableProperty] private string _beforeDetectDelay = "";
         [ObservableProperty] private int _rotaryFactor = 10;
         [ObservableProperty] private bool _isFirstCheck = false;
         [ObservableProperty] private bool _checkBeforeBurst = false;
+        [ObservableProperty] private bool _skipFightEndCheckWhenEnemyVisible = false;
+        [ObservableProperty] private double _blockCheckBeforeBattleSeconds = 0;
+        [ObservableProperty] private bool _paimonEndCheckEnabled = false;
+        [ObservableProperty] private double _paimonEndCheckDelay = 0.1;
     }
 
     [ObservableProperty] private FightFinishDetectConfig _finishDetectConfig = new();
@@ -67,16 +70,19 @@ public partial class AutoLeyLineOutcropFightConfig : ObservableObject
         QinDoublePickUp = source.QinDoublePickUp;
         Timeout = source.Timeout;
 
-        FinishDetectConfig.BattleEndProgressBarColor = source.FinishDetectConfig.BattleEndProgressBarColor;
-        FinishDetectConfig.BattleEndProgressBarColorTolerance = source.FinishDetectConfig.BattleEndProgressBarColorTolerance;
         FinishDetectConfig.FastCheckEnabled = source.FinishDetectConfig.FastCheckEnabled;
         FinishDetectConfig.RotateFindEnemyEnabled = source.FinishDetectConfig.RotateFindEnemyEnabled;
         FinishDetectConfig.FastCheckParams = source.FinishDetectConfig.FastCheckParams;
+        FinishDetectConfig.CheckAfterSwitchAvatar = source.FinishDetectConfig.CheckAfterSwitchAvatar;
         FinishDetectConfig.CheckEndDelay = source.FinishDetectConfig.CheckEndDelay;
         FinishDetectConfig.BeforeDetectDelay = source.FinishDetectConfig.BeforeDetectDelay;
         FinishDetectConfig.RotaryFactor = source.FinishDetectConfig.RotaryFactor;
         FinishDetectConfig.IsFirstCheck = source.FinishDetectConfig.IsFirstCheck;
         FinishDetectConfig.CheckBeforeBurst = source.FinishDetectConfig.CheckBeforeBurst;
+        FinishDetectConfig.SkipFightEndCheckWhenEnemyVisible = source.FinishDetectConfig.SkipFightEndCheckWhenEnemyVisible;
+        FinishDetectConfig.BlockCheckBeforeBattleSeconds = source.FinishDetectConfig.BlockCheckBeforeBattleSeconds;
+        FinishDetectConfig.PaimonEndCheckEnabled = source.FinishDetectConfig.PaimonEndCheckEnabled;
+        FinishDetectConfig.PaimonEndCheckDelay = source.FinishDetectConfig.PaimonEndCheckDelay;
     }
 
     public AutoFightConfig ToAutoFightConfig()
@@ -106,16 +112,19 @@ public partial class AutoLeyLineOutcropFightConfig : ObservableObject
 
         config.FinishDetectConfig = new AutoFightConfig.FightFinishDetectConfig
         {
-            BattleEndProgressBarColor = FinishDetectConfig.BattleEndProgressBarColor,
-            BattleEndProgressBarColorTolerance = FinishDetectConfig.BattleEndProgressBarColorTolerance,
             FastCheckEnabled = FinishDetectConfig.FastCheckEnabled,
             RotateFindEnemyEnabled = FinishDetectConfig.RotateFindEnemyEnabled,
             FastCheckParams = FinishDetectConfig.FastCheckParams,
+            CheckAfterSwitchAvatar = FinishDetectConfig.CheckAfterSwitchAvatar,
             CheckEndDelay = FinishDetectConfig.CheckEndDelay,
             BeforeDetectDelay = FinishDetectConfig.BeforeDetectDelay,
             RotaryFactor = FinishDetectConfig.RotaryFactor,
             IsFirstCheck = FinishDetectConfig.IsFirstCheck,
-            CheckBeforeBurst = FinishDetectConfig.CheckBeforeBurst
+            CheckBeforeBurst = FinishDetectConfig.CheckBeforeBurst,
+            SkipFightEndCheckWhenEnemyVisible = FinishDetectConfig.SkipFightEndCheckWhenEnemyVisible,
+            BlockCheckBeforeBattleSeconds = FinishDetectConfig.BlockCheckBeforeBattleSeconds,
+            PaimonEndCheckEnabled = FinishDetectConfig.PaimonEndCheckEnabled,
+            PaimonEndCheckDelay = FinishDetectConfig.PaimonEndCheckDelay
         };
 
         return config;

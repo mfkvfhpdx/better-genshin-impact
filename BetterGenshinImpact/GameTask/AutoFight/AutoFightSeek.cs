@@ -1,4 +1,4 @@
-﻿using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
 using BetterGenshinImpact.Core.Simulator.Extensions;
 using Microsoft.Extensions.Logging;
 using System.Threading;
@@ -30,8 +30,9 @@ namespace BetterGenshinImpact.GameTask.AutoFight
         public static Task<bool?> MoveForwardAsync(Scalar scalarLower, Scalar scalarHigher, ILogger logger, CancellationToken ct)
         {
             using var image2 = CaptureToRectArea();
+            using var imageCrop = image2.DeriveCrop(0, 0, image2.Width * 1570 / 1920, image2.Height * 970 / 1080);
             using Mat mask2 = OpenCvCommonHelper.Threshold(
-                image2.DeriveCrop(0, 0, image2.Width * 1570 / 1920, image2.Height * 970 / 1080).SrcMat,
+                imageCrop.SrcMat,
                 scalarLower,
                 scalarHigher
             );
@@ -47,7 +48,7 @@ namespace BetterGenshinImpact.GameTask.AutoFight
             if (numLabels2 > 1)
             {
                 // 获取第一个连通对象的统计信息（标签1）
-                Mat firstRow = stats2.Row(1); // 获取第1行（标签1）的数据
+                using Mat firstRow = stats2.Row(1); // 获取第1行（标签1）的数据
                 int[] stats;
                 bool success = firstRow.GetArray(out stats); // 使用 out 参数来接收数组数据
 
@@ -72,11 +73,11 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                                 logger.LogInformation("敌人在左上，向前加向左移动");
                                 Task.Run(() =>
                                 {
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveLeft, KeyType.KeyDown);
                                     Task.Delay(1000, ct).Wait();
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
                                 }, ct);
                             }
                         }
@@ -88,11 +89,11 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                                 logger.LogInformation("敌人在右上，向前加向右移动");
                                 Task.Run(() =>
                                 {
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveRight, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveRight, KeyType.KeyDown);
                                     Task.Delay(1000, ct).Wait();
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
                                 }, ct);
                             }
                         }
@@ -104,11 +105,11 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                                 logger.LogInformation("敌人在左下，向后加向左移动");
                                 Task.Run(() =>
                                 {
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveLeft, KeyType.KeyDown);
                                     Task.Delay(1000, ct).Wait();
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveLeft, KeyType.KeyUp);
                                 }, ct);
                             }
                         }
@@ -120,11 +121,11 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                                 logger.LogInformation("敌人在右下，向后加向右移动");
                                 Task.Run(() =>
                                 {
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveRight, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveRight, KeyType.KeyDown);
                                     Task.Delay(1000, ct).Wait();
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveRight, KeyType.KeyUp);
                                 }, ct);
                             }
                         }
@@ -136,9 +137,9 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                                 logger.LogInformation("敌人在上方，向前移动");
                                 Task.Run(() =>
                                 {
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
                                     Task.Delay(1000, ct).Wait();
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
                                 }, ct);
                             }
                         }
@@ -150,9 +151,9 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                                 logger.LogInformation("敌人在下方，向后移动");
                                 Task.Run(() =>
                                 {
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
                                     Task.Delay(1000, ct).Wait();
-                                    Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
                                 }, ct);
                             }
                         }
@@ -161,12 +162,12 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                             // 非上述区域且非中心区域，判断左右
                             if (firstPixel.X < 920 && height > 6)
                             {
-                                Simulation.SendInput.SimulateAction(GIActions.MoveBackward);
+                                InputHub.Foreground.SimulateAction(GIActions.MoveBackward);
                                 logger.LogInformation("敌人在左侧，不移动");
                             }
                             else if (firstPixel.X > 920 && height > 6)
                             {
-                                Simulation.SendInput.SimulateAction(GIActions.MoveBackward);
+                                InputHub.Foreground.SimulateAction(GIActions.MoveBackward);
                                 logger.LogInformation("敌人在右侧，不移动");
                             }
                         }
@@ -175,7 +176,7 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                     {
                         if (height > 6)
                         {
-                            Simulation.SendInput.SimulateAction(GIActions.MoveBackward);
+                            InputHub.Foreground.SimulateAction(GIActions.MoveBackward);
                             logger.LogInformation("敌人在中心且高度大于6，不移动");
                         }
                         else if (firstPixel.X < 1315 && firstPixel.X > 500 && firstPixel.Y < 800 && height > 2)
@@ -183,9 +184,9 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                             logger.LogInformation("敌人在上方，向前移动");
                             Task.Run(() =>
                             {
-                                Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+                                InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
                                 Task.Delay(1000, ct).Wait();
-                                Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+                                InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
                             }, ct);
                         }
                         else if (firstPixel.X < 1315 && firstPixel.X > 500 && firstPixel.Y > 800 && height > 2)
@@ -193,19 +194,19 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                             logger.LogInformation("敌人在下方，向后移动");
                             Task.Run(() =>
                             {
-                                Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
+                                InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
                                 Task.Delay(1000, ct).Wait();
-                                Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
+                                InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
                             }, ct);
                         }
                         else if (height < 3)
                         {
-                            Simulation.SendInput.SimulateAction(GIActions.MoveBackward);
+                            InputHub.Foreground.SimulateAction(GIActions.MoveBackward);
                             logger.LogInformation("敌人血量高度小于3，不移动");
                         }
                         else
                         {
-                            Simulation.SendInput.SimulateAction(GIActions.MoveBackward);
+                            InputHub.Foreground.SimulateAction(GIActions.MoveBackward);
                             logger.LogInformation("不移动");
                         }
                     }
@@ -243,76 +244,74 @@ namespace BetterGenshinImpact.GameTask.AutoFight
 
             while (retryCount < 25+(int)(adjustedX / 5))
             {
-                var image = CaptureToRectArea();
-                Mat mask = OpenCvCommonHelper.Threshold(image.DeriveCrop(0, 0, 1500, 900).SrcMat, bloodLower);
-                
-                Mat labels = new Mat();
-                Mat stats = new Mat();
-                Mat centroids = new Mat();
-
-                int numLabels = Cv2.ConnectedComponentsWithStats(mask, labels, stats, centroids,
-                    connectivity: PixelConnectivity.Connectivity4, ltype: MatType.CV_32S);
-                // if (retryCount == 0) logger.LogInformation("敌人初检数量： {numLabels}", numLabels - 1);
-
-                if (numLabels > 1)
+                int imageWidth;
+                int imageHeight;
+                using (var image = CaptureToRectArea())
+                using (var imageCrop = image.DeriveCrop(0, 0, 1500, 900))
+                using (var mask = OpenCvCommonHelper.Threshold(imageCrop.SrcMat, bloodLower))
+                using (var labels = new Mat())
+                using (var stats = new Mat())
+                using (var centroids = new Mat())
                 {
-                    // logger.LogInformation("检测画面内疑似有敌人，继续战斗...");
+                    imageWidth = image.Width;
+                    imageHeight = image.Height;
+                    int numLabels = Cv2.ConnectedComponentsWithStats(mask, labels, stats, centroids,
+                        connectivity: PixelConnectivity.Connectivity4, ltype: MatType.CV_32S);
+                    // if (retryCount == 0) logger.LogInformation("敌人初检数量： {numLabels}", numLabels - 1);
 
-                    using Mat firstRow = stats.Row(1);
-                    int[] statsArray;
-                    bool success = firstRow.GetArray(out statsArray); 
-                    int height = statsArray[3];
-                    int x = statsArray[0];
-                    // Logger.LogInformation("敌人位置: ({x}，血量高度: {height}", x, height);
-                    
-                    image.Dispose();
-                    mask.Dispose();
-                    labels.Dispose();
-                    stats.Dispose();
-                    centroids.Dispose();
-                    
-                    if (success)
+                    if (numLabels > 1)
                     {
-                        if (isEndCheck) 
-                        {
-                            await Task.Run(() =>
-                            {
-                                Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
-                                Task.Delay(100, ct).Wait();;
-                                Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
-                            }, ct);
-                        }
-                        else
-                        {
-                            Simulation.SendInput.SimulateAction(GIActions.MoveForward);
-                            Simulation.SendInput.SimulateAction(GIActions.MoveForward);
-                        }
-                        
-                        if (height > 2 && height < 7)
-                        {
-                            // logger.LogInformation("画面内有找到敌人，尝试移动...");
-                            Task.Run(() => { MoveForwardTask.MoveForwardAsync(bloodLower, bloodLower, logger, ct); }, ct);
-                            return false;
-                        }
+                        // logger.LogInformation("检测画面内疑似有敌人，继续战斗...");
 
-                        if (height > 6 && height < 25)
+                        using Mat firstRow = stats.Row(1);
+                        bool success = firstRow.GetArray(out int[] statsArray);
+                        if (success && statsArray.Length >= 4)
                         {
-                            if ((x == 758 || x == 722) && (height ==7 || height == 8))//固定血条的怪物，尝试旋转寻找
+                            int height = statsArray[3];
+                            int x = statsArray[0];
+                            // Logger.LogInformation("敌人位置: ({x}，血量高度: {height}", x, height);
+
+                            if (isEndCheck)
                             {
                                 await Task.Run(() =>
                                 {
-                                    Simulation.SendInput.Mouse.MoveMouseBy(960, 0);
-                                    Task.Delay(200, ct).Wait();
-                                    Simulation.SendInput.Mouse.MiddleButtonClick();
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+                                    Task.Delay(100, ct).Wait();;
+                                    InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
                                 }, ct);
                             }
-                            // logger.LogInformation("画面内有找到敌人，继续战斗...");
-                            return false;
-                        }
+                            else
+                            {
+                                InputHub.Foreground.SimulateAction(GIActions.MoveForward);
+                                InputHub.Foreground.SimulateAction(GIActions.MoveForward);
+                            }
 
-                        if (height < 3 || height > 25)
-                        {
-                            return  null;
+                            if (height > 2 && height < 7)
+                            {
+                                // logger.LogInformation("画面内有找到敌人，尝试移动...");
+                                Task.Run(() => { MoveForwardTask.MoveForwardAsync(bloodLower, bloodLower, logger, ct); }, ct);
+                                return false;
+                            }
+
+                            if (height > 6 && height < 25)
+                            {
+                                if ((x == 758 || x == 722) && (height ==7 || height == 8))//固定血条的怪物，尝试旋转寻找
+                                {
+                                    await Task.Run(() =>
+                                    {
+                                        InputHub.Foreground.Mouse.MoveMouseBy(960, 0);
+                                        Task.Delay(200, ct).Wait();
+                                        InputHub.Foreground.Mouse.MiddleButtonClick();
+                                    }, ct);
+                                }
+                                // logger.LogInformation("画面内有找到敌人，继续战斗...");
+                                return false;
+                            }
+
+                            if (height < 3 || height > 25)
+                            {
+                                return  null;
+                            }
                         }
                     }
                 }
@@ -322,106 +321,94 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                     await Delay(delayTime,ct);
                     // Logger.LogInformation("打开编队界面检查战斗是否结束，延时{detectDelayTime}毫秒检查", detectDelayTime);
                     Logger.LogInformation("打开编队界面检查战斗是否结束");
-                    Simulation.SendInput.SimulateAction(GIActions.OpenPartySetupScreen);
+                    InputHub.Foreground.SimulateAction(GIActions.OpenPartySetupScreen);
                     await Delay(detectDelayTime, ct);
-                    var ra3 = CaptureToRectArea();
+                    using var ra3 = CaptureToRectArea();
                     var b33 = ra3.SrcMat.At<Vec3b>(50, 790); // 进度条颜色
                     var whiteTile3 = ra3.SrcMat.At<Vec3b>(50, 768); // 白块
-                    Simulation.SendInput.SimulateAction(GIActions.Drop);
-                    ra3.Dispose();
+                    InputHub.Foreground.SimulateAction(GIActions.Drop);
                 
                     if (IsWhite(whiteTile3.Item2, whiteTile3.Item1, whiteTile3.Item0) &&
                         IsYellow(b33.Item2, b33.Item1, b33.Item0))
                     {
                         logger.LogInformation("识别到战斗结束-s");
-                        Simulation.SendInput.SimulateAction(GIActions.OpenPartySetupScreen);
+                        InputHub.Foreground.SimulateAction(GIActions.OpenPartySetupScreen);
                         return true;
                     }
                 }
 
                 if (RotationCount == 3 && retryCount == 0)
                 {
-                    Simulation.SendInput.Mouse.MiddleButtonClick();
+                    InputHub.Foreground.Mouse.MiddleButtonClick();
                     await Task.Delay(500, ct);
                 }
                 
                 if (retryCount <= 2)
                 {
                    var offsets = new (int x, int y)[] {
-                        (image.Width / 6, image.Height / 7), 
-                        (image.Width / 6, 0),                 
-                        (image.Width / 6, -image.Height / 5),
-                        (image.Width / 6, -image.Height),  
+                        (imageWidth / 6, imageHeight / 7),
+                        (imageWidth / 6, 0),
+                        (imageWidth / 6, -imageHeight / 5),
+                        (imageWidth / 6, -imageHeight),
                     };
 
                     var offsetIndex = RotationCount < 2 ? 0 : (RotationCount == 2) ? 1 : (RotationCount >= 3) ? 2 : 3;
-                    Simulation.SendInput.Mouse.MoveMouseBy(offsets[offsetIndex].x, offsets[offsetIndex].y);
+                    InputHub.Foreground.Mouse.MoveMouseBy(offsets[offsetIndex].x, offsets[offsetIndex].y);
                 }
                 else
                 {
-                    Simulation.SendInput.Mouse.MoveMouseBy(image.Width / 6, 0);
+                    InputHub.Foreground.Mouse.MoveMouseBy(imageWidth / 6, 0);
                 }
 
                 await Task.Delay(50+(int)(adjustedX/adjustedDivisor),ct);
 
-                image = CaptureToRectArea();
-                mask = OpenCvCommonHelper.Threshold(image.DeriveCrop(0, 0, 1500, 900).SrcMat, bloodLower);
-                labels = new Mat();
-                stats = new Mat();
-                centroids = new Mat();
-
-                 numLabels = Cv2.ConnectedComponentsWithStats(mask, labels, stats, centroids,
-                    connectivity: PixelConnectivity.Connectivity4, ltype: MatType.CV_32S);
-
-                if (numLabels > 1)
+                using (var image = CaptureToRectArea())
+                using (var secondImageCrop = image.DeriveCrop(0, 0, 1500, 900))
+                using (var mask = OpenCvCommonHelper.Threshold(secondImageCrop.SrcMat, bloodLower))
+                using (var labels = new Mat())
+                using (var stats = new Mat())
+                using (var centroids = new Mat())
                 {
-                    // logger.LogInformation("检测敌人第 {retryCount} 次： {numLabels}", retryCount + 1, numLabels - 1);
-                    Mat firstRow2 = stats.Row(1); // 获取第1行（标签1）的数据
-                    int[] statsArray2;
-                    bool success2 = firstRow2.GetArray(out statsArray2); // 使用 out 参数来接收数组数据
-                    int height2 = statsArray2[3];
-                    // logger.LogInformation("敌人血量 ：{height2}", height2);
-                    
-                    mask.Dispose();
-                    labels.Dispose();
-                    stats.Dispose();
-                    centroids.Dispose();
-                    image.Dispose();
+                    int numLabels = Cv2.ConnectedComponentsWithStats(mask, labels, stats, centroids,
+                        connectivity: PixelConnectivity.Connectivity4, ltype: MatType.CV_32S);
 
-                    if (success2)
+                    if (numLabels > 1)
                     {
-                        if (isEndCheck) await Task.Run(() =>
+                        // logger.LogInformation("检测敌人第 {retryCount} 次： {numLabels}", retryCount + 1, numLabels - 1);
+                        using Mat firstRow2 = stats.Row(1); // 获取第1行（标签1）的数据
+                        bool success2 = firstRow2.GetArray(out int[] statsArray2); // 使用 out 参数来接收数组数据
+                        if (success2 && statsArray2.Length >= 4)
                         {
-                            Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
-                            Task.Delay(100, ct).Wait();
-                            Simulation.SendInput.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
-                        }, ct);
-                        
-                        if (height2 > 2 && height2 < 7)
-                        {
-                            // logger.LogInformation("画面内有找到敌人，尝试移动...");
-                            Task.Run(() => { MoveForwardTask.MoveForwardAsync(bloodLower, bloodLower, logger, ct); }, ct);
-                            return false;
-                        }
+                            int height2 = statsArray2[3];
+                            // logger.LogInformation("敌人血量 ：{height2}", height2);
 
-                        if (height2 > 6 && height2 < 25)
-                        {
-                            // logger.LogInformation("画面内有找到敌人，继续战斗...");
-                            return false;
-                        }
+                            if (isEndCheck) await Task.Run(() =>
+                            {
+                                InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyDown);
+                                Task.Delay(100, ct).Wait();
+                                InputHub.Foreground.SimulateAction(GIActions.MoveForward, KeyType.KeyUp);
+                            }, ct);
 
-                        if (height2 < 3 || height2 > 25)
-                        {
-                            return null;
+                            if (height2 > 2 && height2 < 7)
+                            {
+                                // logger.LogInformation("画面内有找到敌人，尝试移动...");
+                                Task.Run(() => { MoveForwardTask.MoveForwardAsync(bloodLower, bloodLower, logger, ct); }, ct);
+                                return false;
+                            }
+
+                            if (height2 > 6 && height2 < 25)
+                            {
+                                // logger.LogInformation("画面内有找到敌人，继续战斗...");
+                                return false;
+                            }
+
+                            if (height2 < 3 || height2 > 25)
+                            {
+                                return null;
+                            }
                         }
                     }
                 }
-                
-                mask.Dispose();
-                labels.Dispose();
-                stats.Dispose();
-                centroids.Dispose();
-                image.Dispose();
                 
                 retryCount++;
             }
@@ -478,24 +465,31 @@ namespace BetterGenshinImpact.GameTask.AutoFight
             
                         guardianAvatar.UseSkill(guardianAvatarHold);
                         var imageAfterUseSkill = CaptureToRectArea();
-                        
                         var retry = 50;
-                        while (!(await AvatarSkillAsync(Logger, guardianAvatar, false, 1, ct,imageAfterUseSkill)) && retry > 0)
+                        try
                         {
-                            Simulation.SendInput.SimulateAction(GIActions.ElementalSkill);
-                            //防止在纳塔飞天或爬墙
-                            Simulation.ReleaseAllKey();
-                            if (retry % 3 == 0)
+                            while (!(await AvatarSkillAsync(Logger, guardianAvatar, false, 1, ct,imageAfterUseSkill)) && retry > 0)
                             {
-                                Simulation.SendInput.SimulateAction(GIActions.NormalAttack);
-                                Simulation.SendInput.SimulateAction(GIActions.Drop);
+                                InputHub.Foreground.SimulateAction(GIActions.ElementalSkill);
+                                //防止在纳塔飞天或爬墙
+                                InputHub.ReleaseAll();
+                                if (retry % 3 == 0)
+                                {
+                                    InputHub.Foreground.SimulateAction(GIActions.NormalAttack);
+                                    InputHub.Foreground.SimulateAction(GIActions.Drop);
+                                }
+                                var previousImage = imageAfterUseSkill;
+                                imageAfterUseSkill = CaptureToRectArea();
+                                previousImage.Dispose();
+                                await Task.Delay(30, ct);
+                                // Logger.LogInformation("优先第333 {t}", retry);
+                                retry -= 1;
                             }
-                            imageAfterUseSkill = CaptureToRectArea();
-                            await Task.Delay(30, ct);
-                            // Logger.LogInformation("优先第333 {t}", retry);
-                            retry -= 1;
                         }
-                        imageAfterUseSkill.Dispose();
+                        finally
+                        {
+                            imageAfterUseSkill.Dispose();
+                        }
                         
                         if (retry > 0)
                         {
@@ -511,8 +505,8 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                         guardianAvatar.ManualSkillCd = 0;
                         guardianAvatar.UseSkill(guardianAvatarHold);
                         //防止在纳塔飞天或
-                        Simulation.SendInput.SimulateAction(GIActions.NormalAttack);
-                        Simulation.SendInput.SimulateAction(GIActions.Drop);
+                        InputHub.Foreground.SimulateAction(GIActions.NormalAttack);
+                        InputHub.Foreground.SimulateAction(GIActions.Drop);
                     }
                     attempt++;
                 }
@@ -522,7 +516,7 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                 using var image = CaptureToRectArea();
                 if (!guardianAvatar.IsActive(image))
                 {
-                    var skillArea = AutoFightAssets.Instance.AvatarQRectListMap[guardianAvatar.Index - 1];//Q技能区域
+                    var skillArea = AutoFightAssets.Get(image).AvatarQRectListMap[guardianAvatar.Index - 1];//Q技能区域
                     // 首先对图像进行预处理，转为灰度图
                     using var grayImage = image.DeriveCrop(skillArea).SrcMat.CvtColor(ColorConversionCodes.BGR2GRAY);
                 
@@ -552,12 +546,12 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                         
                         if (guardianAvatar.TrySwitch(8))
                         {
-                            Simulation.SendInput.SimulateAction(GIActions.ElementalBurst);
+                            InputHub.Foreground.SimulateAction(GIActions.ElementalBurst);
                             Sleep(500, ct);
-                            Simulation.ReleaseAllKey();
+                            InputHub.ReleaseAll();
                         
                             //普攻一下，防止在纳塔飞天
-                            Simulation.SendInput.SimulateAction(GIActions.NormalAttack);
+                            InputHub.Foreground.SimulateAction(GIActions.NormalAttack);
                             using (var imageAfterBurst = CaptureToRectArea())
                             {
                                 if (AvatarSkillAsync(Logger, guardianAvatar, true, 1, ct).Result 
@@ -568,8 +562,8 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                                 else
                                 {
                                     Sleep(500, ct);
-                                    Simulation.SendInput.SimulateAction(GIActions.NormalAttack);//普攻一下，防止在纳塔飞天
-                                    Simulation.SendInput.SimulateAction(GIActions.ElementalBurst);//尝试再放一次,不检查
+                                    InputHub.Foreground.SimulateAction(GIActions.NormalAttack);//普攻一下，防止在纳塔飞天
+                                    InputHub.Foreground.SimulateAction(GIActions.ElementalBurst);//尝试再放一次,不检查
                                     guardianAvatar.IsBurstReady = true;
                                 }
                                 Logger.LogInformation("优先第 {guardianAvatarName} 盾奶位 {GuardianAvatar} 释放元素爆发：{text}",
@@ -602,11 +596,10 @@ namespace BetterGenshinImpact.GameTask.AutoFight
             {
                 Scalar bloodLower = new Scalar(255, 255, 255);
                 int attempt = 0;
-                var model = image is null;
-
                 while (attempt < retryCount)
                 {
-                    using var image2 = model ? CaptureToRectArea() : image ?? CaptureToRectArea();
+                    using var ownedImage = image == null ? CaptureToRectArea() : null;
+                    var image2 = image ?? ownedImage!;
 
                     // var image2 = CaptureToRectArea();
 
@@ -617,8 +610,9 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                         : new Rect(image2.Width * 1809 / 1920, image2.Height * 968 / 1080,
                             image2.Width * 30 / 1920, image2.Height * 15 / 1080); //Q技能区域
                     
+                    using var skillRegion = image2.DeriveCrop(skillAra);
                     using var mask2 = OpenCvCommonHelper.Threshold(
-                        image2.DeriveCrop(skillAra).SrcMat,
+                        skillRegion.SrcMat,
                         bloodLower,
                         bloodLower
                     );
@@ -630,8 +624,6 @@ namespace BetterGenshinImpact.GameTask.AutoFight
                     int numLabels2 = Cv2.ConnectedComponentsWithStats(mask2, labels2, stats2, centroids2,
                         connectivity: PixelConnectivity.Connectivity4, ltype: MatType.CV_32S);
 
-                    if (model) image2.Dispose();
-                    
                     if (needLog) Logger.LogInformation("技能状态：{guardianAvatar.Name} - {skills} 状态 {text}", 
                         guardianAvatar.Name, skills?"Q技能":"E技能", numLabels2 > 1?"冷却中":"就绪");
                     
@@ -677,45 +669,58 @@ namespace BetterGenshinImpact.GameTask.AutoFight
 
         }
         
-        //全队Q检测函数，备用，后续可用于自动EQ开发
+        /// <summary>
+        /// 全队Q检测函数，备用，后续可用于自动EQ开发
+        /// 不再推荐使用原因，可以参考使用 BetterGenshinImpact.GameTask.AutoFight.Model.Avatar.IsBurstReadyByClassify 方法，识别速度更快，效果更好
+        /// </summary>
+        /// <param name="image"></param>
+        /// <param name="useEqList"></param>
+        /// <param name="avatarCurrent"></param>
+        /// <returns></returns>
+        [Obsolete]
         public static Task<List<int>> AvatarQSkillAsync(ImageRegion? image = null, List<int>? useEqList = null,int? avatarCurrent = null)
         {
+            var ownImage = image == null;
             image ??= CaptureToRectArea();
-            image.SrcMat.ConvertTo(image.SrcMat, MatType.CV_8UC3, alpha: 2, beta: -200); // 增加亮度和对比度
-            var useMedicine = new List<int>();
-            var eqList = useEqList ?? new List<int> { 1, 2, 3, 4 };
-        
-            foreach (var i in eqList)
+            try
             {
-                var skillArea = i != avatarCurrent ? AutoFightAssets.Instance.AvatarQRectListMap[i - 1]: new Rect(1762, 915, 114, 111);
-                
-                using var grayImage = image.DeriveCrop(skillArea).SrcMat.CvtColor(ColorConversionCodes.BGR2GRAY);
-        
-                var meanBrightness = Cv2.Mean(grayImage);
-                var avgBrightness = meanBrightness.Val0;
-                var threshold1 = avgBrightness * 0.9;
-                var threshold2 = avgBrightness * 2;
-        
-                Cv2.Canny(grayImage, grayImage, threshold1: (float)threshold1, threshold2: (float)threshold2);
-        
-                var circles = Cv2.HoughCircles(grayImage, HoughModes.Gradient, dp: 1.2, minDist: 20,
-                    param1: 90, param2:i != avatarCurrent ? 25 : 35, minRadius: i != avatarCurrent ? 25 : 50, maxRadius:i != avatarCurrent ? 34 : 60);
-        
-                if (circles.Length > 0)
+                image.SrcMat.ConvertTo(image.SrcMat, MatType.CV_8UC3, alpha: 2, beta: -200); // 增加亮度和对比度
+                var useMedicine = new List<int>();
+                var eqList = useEqList ?? new List<int> { 1, 2, 3, 4 };
+
+                foreach (var i in eqList)
                 {
-                    useMedicine.Add(i);
+                    var skillArea = i != avatarCurrent ? AutoFightAssets.Get(image).AvatarQRectListMap[i - 1]: new Rect(1762, 915, 114, 111);
+
+                    using var grayImage = image.DeriveCrop(skillArea).SrcMat.CvtColor(ColorConversionCodes.BGR2GRAY);
+
+                    var meanBrightness = Cv2.Mean(grayImage);
+                    var avgBrightness = meanBrightness.Val0;
+                    var threshold1 = avgBrightness * 0.9;
+                    var threshold2 = avgBrightness * 2;
+
+                    Cv2.Canny(grayImage, grayImage, threshold1: (float)threshold1, threshold2: (float)threshold2);
+
+                    var circles = Cv2.HoughCircles(grayImage, HoughModes.Gradient, dp: 1.2, minDist: 20,
+                        param1: 90, param2:i != avatarCurrent ? 25 : 35, minRadius: i != avatarCurrent ? 25 : 50, maxRadius:i != avatarCurrent ? 34 : 60);
+
+                    if (circles.Length > 0)
+                    {
+                        useMedicine.Add(i);
+                    }
                 }
+
+                if (useMedicine.Count > 0)
+                {
+                    return Task.FromResult(useMedicine);
+                }
+
+                return Task.FromResult(new List<int>());
             }
-            
-            image.Dispose();
-        
-            if (useMedicine.Count > 0)
+            finally
             {
-                Logger.LogInformation("元素爆发 {text} 的角色序号：{useMedicine}", "就绪", useMedicine);
-                return Task.FromResult(useMedicine);
+                if (ownImage) image.Dispose();
             }
-        
-            return Task.FromResult(new List<int>());
         }
     }
 

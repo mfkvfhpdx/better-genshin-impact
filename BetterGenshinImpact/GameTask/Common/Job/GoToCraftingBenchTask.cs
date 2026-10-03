@@ -1,5 +1,5 @@
-﻿using BetterGenshinImpact.Core.Config;
-using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.GameTask.AutoPathing;
 using BetterGenshinImpact.GameTask.AutoPathing.Model;
 using BetterGenshinImpact.GameTask.Common.BgiVision;
@@ -45,14 +45,14 @@ public class GoToCraftingBenchTask
         this.craftLocalizedString = stringLocalizer.WithCultureGet(cultureInfo, "合成");
     }
     
-    public async Task Start(string country, CancellationToken ct)
+    public async Task GoCraftResin(string country, CancellationToken ct)
     {
         Logger.LogInformation("→ {Name} 开始", Name);
         for (int i = 0; i < _retryTimes; i++)
         {
             try
             {
-                await DoOnce(country, ct);
+                await GoCraftResinOnce(country, ct);
                 break;
             }
             catch (Exception e)
@@ -74,21 +74,15 @@ public class GoToCraftingBenchTask
         Logger.LogInformation("→ {Name} 结束", Name);
     }
 
-    public async Task DoOnce(string country, CancellationToken ct)
+    public async Task GoCraftResinOnce(string country, CancellationToken ct)
     {
          // 1. 走到合成台并交互
-        await GoToCraftingBench(country, ct);
+        await GoToCraftingBenchOnce(country, ct);
 
-        // 2. 等待合成界面
-        await _chooseTalkOptionTask.SelectLastOptionUntilEnd(ct,
-            region => region.Find(ElementAssets.Instance.BtnWhiteConfirm).IsExist()
-        );
-        await Delay(800, ct);
-        
         // 判断浓缩树脂是否存在
         // TODO 满的情况是怎么样子的
-        var ra = CaptureToRectArea();
-        var resin = ra.Find(ElementAssets.Instance.CraftCondensedResin);
+        using var ra = CaptureToRectArea();
+        var resin = ra.Find(ElementRecognition.Get("CraftCondensedResin", ra));
         
         if (resin.IsExist())
         {
@@ -97,7 +91,7 @@ public class GoToCraftingBenchTask
             if (SelectedConfig?.MinResinToKeep > 0){//开关判断，填写的数量大于0时启用 SelectedConfig.MinResinToKeep
                 var fragileResinCount = 0;
                 var condensedResinCount = 0;
-                var fragileResinCountRa = ra.Find(ElementAssets.Instance.fragileResinCount);
+                var fragileResinCountRa = ra.Find(ElementRecognition.Get("fragileResinCount", ra));
                 if (!fragileResinCountRa.IsEmpty())
                 {
                     // 图像下方就是脆弱树脂数量
@@ -117,7 +111,7 @@ public class GoToCraftingBenchTask
                 //浓缩纠缠重试
                 var condensed =await NewRetry.WaitForAction(() =>
                 {
-                    var condensedResinCountRa = ra.Find(ElementAssets.Instance.CondensedResinCount);
+                    var condensedResinCountRa = ra.Find(ElementRecognition.Get("CondensedResinCount", ra));
                     if (!condensedResinCountRa.IsEmpty())
                     {
                         // 图像右侧就是浓缩树脂数量
@@ -130,7 +124,7 @@ public class GoToCraftingBenchTask
                 },ct,3,200); 
                 if (!condensed)
                 {
-                    Simulation.SendInput.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
+                    InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
                     await new ReturnMainUiTask().Start(ct);
                     throw new Exception($"识别浓缩树脂数量失败: {condensedResinCount}");
                 }
@@ -172,7 +166,8 @@ public class GoToCraftingBenchTask
                     Bv.ClickWhiteConfirmButton(ra);
                     Logger.LogInformation("合成{Text}", "浓缩树脂");
                     await Delay(300, ct);
-                    Bv.ClickBlackConfirmButton(CaptureToRectArea());
+                    using var confirmCapture = CaptureToRectArea();
+                    Bv.ClickBlackConfirmButton(confirmCapture);
                 }
                 else
                 {
@@ -185,11 +180,12 @@ public class GoToCraftingBenchTask
                 Bv.ClickWhiteConfirmButton(ra);
                 Logger.LogInformation("合成{Text}", "浓缩树脂");
                 await Delay(300, ct);
-                Bv.ClickBlackConfirmButton(CaptureToRectArea());
+                using var confirmCapture = CaptureToRectArea();
+                Bv.ClickBlackConfirmButton(confirmCapture);
             }
             await Delay(1300, ct);
             // 直接ESC退出即可
-            Simulation.SendInput.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
+            InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
         }
         else
         {
@@ -206,6 +202,32 @@ public class GoToCraftingBenchTask
     /// <param name="ct"></param>
     /// <returns></returns>
     public async Task GoToCraftingBench(string country, CancellationToken ct)
+    {
+        Logger.LogInformation("→ {Name} 开始", Name);
+        for (int i = 0; i < _retryTimes; i++)
+        {
+            try
+            {
+                await GoToCraftingBenchOnce(country, ct);
+                break;
+            }
+            catch (Exception e)
+            {
+                Logger.LogError("前往合成台执行异常：" + e.Message);
+                if (i == _retryTimes - 1)
+                {
+                    throw;
+                }
+
+                await Delay(1000, ct);
+                Logger.LogInformation("重试前往合成台");
+            }
+        }
+
+        Logger.LogInformation("→ {Name} 结束", Name);
+    }
+
+    public async Task GoToCraftingBenchOnce(string country, CancellationToken ct)
     {
         var task = PathingTask.BuildFromFilePath(Global.Absolute(@$"GameTask\Common\Element\Assets\Json\合成台_{country}.json"));
         if (task == null)
@@ -236,9 +258,9 @@ public class GoToCraftingBenchTask
             if (!IsInCraftingTalkUi())
             {
                 // 往回走一步重试
-                Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
+                InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyDown);
                 await Delay(200, ct);
-                Simulation.SendInput.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
+                InputHub.Foreground.SimulateAction(GIActions.MoveBackward, KeyType.KeyUp);
                 
                 await TryPressCrafting(ct);
             
@@ -250,6 +272,12 @@ public class GoToCraftingBenchTask
             
             }
         }
+
+        // 等待进入合成界面
+        await _chooseTalkOptionTask.SelectLastOptionUntilEnd(ct,
+            region => region.Find(ElementRecognition.Get("BtnWhiteConfirm", region)).IsExist()
+        );
+        await Delay(800, ct);
     }
 
 

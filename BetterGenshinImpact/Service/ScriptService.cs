@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.Core.Script;
 using BetterGenshinImpact.Core.Script.Dependence;
 using BetterGenshinImpact.Core.Script.Group;
@@ -18,6 +19,7 @@ using BetterGenshinImpact.GameTask.Common.BgiVision;
 using BetterGenshinImpact.GameTask.Common.Job;
 using BetterGenshinImpact.GameTask.FarmingPlan;
 using BetterGenshinImpact.GameTask.LogParse;
+using BetterGenshinImpact.GameTask.Runtime;
 using BetterGenshinImpact.GameTask.TaskProgress;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service.Interface;
@@ -32,8 +34,14 @@ public partial class ScriptService : IScriptService
 {
     private readonly ILogger<ScriptService> _logger = App.GetLogger<ScriptService>();
     private readonly BlessingOfTheWelkinMoonTask _blessingOfTheWelkinMoonTask = new();
+    private readonly TaskTriggerDispatcher _triggers;
 
-    public bool ShouldSkipTask(ScriptGroupProject project,bool enableLogging = true)
+    public ScriptService(TaskTriggerDispatcher triggers)
+    {
+        _triggers = triggers;
+    }
+
+    public bool ShouldSkipTask(ScriptGroupProject project, bool enableLogging = true)
     {
         if (project.Status != "Enabled")
         {
@@ -194,6 +202,9 @@ public partial class ScriptService : IScriptService
     {
         groupName ??= "默认";
 
+        // 启动等待之前先进行取消操作的初始化，便于在任务开始前终止任务.
+        CancellationContext.Instance.Set();
+
         var list = ReloadScriptProjects(projectList);
         
         //恢复临时的跳过标志
@@ -214,6 +225,11 @@ public partial class ScriptService : IScriptService
 
         // 没启动时候，启动截图器
         await StartGameTask();
+        if (CancellationContext.Instance.IsCancellationRequested)
+        {
+            _logger.LogInformation("配置组 {Name} 在启动阶段被取消", groupName);
+            return;
+        }
         
         
         if (!string.IsNullOrEmpty(groupName)&&!RunnerContext.Instance.IsPreExecution)
@@ -316,7 +332,7 @@ public partial class ScriptService : IScriptService
                         {
                             try
                             {
-                                TaskTriggerDispatcher.Instance().ClearTriggers();
+                                _triggers.ClearTriggers();
 
 
                                 _logger.LogInformation("------------------------------");
@@ -336,7 +352,7 @@ public partial class ScriptService : IScriptService
                             {
                                 throw;
                             }
-                            catch (TaskCanceledException e)
+                            catch (OperationCanceledException e)
                             {
                                 _logger.LogInformation("取消执行配置组: {Msg}", e.Message);
                                 throw;
@@ -496,7 +512,7 @@ public partial class ScriptService : IScriptService
 
     private async Task ExecuteProject(ScriptGroupProject project)
     {
-        TaskContext.Instance().CurrentScriptProject = project;
+        RunnerContext.Instance.CurrentScriptProject = project;
         if (project.Type == "Javascript")
         {
             if (project.Project == null)
@@ -506,7 +522,15 @@ public partial class ScriptService : IScriptService
 
             _logger.LogInformation("→ 开始执行JS脚本: {Name}", project.Name);
             if (RunnerContext.Instance.IsPreExecution) _logger.LogInformation("此任务为优先执行任务！");
-            await project.Run();
+            var hasSettingsBeforeRun = project.JsScriptSettingsObject != null;
+            try
+            {
+                await project.Run();
+            }
+            finally
+            {
+                SaveScriptGroupAfterJsRun(project, hasSettingsBeforeRun);
+            }
         }
         else if (project.Type == "KeyMouse")
         {
@@ -525,6 +549,32 @@ public partial class ScriptService : IScriptService
             _logger.LogInformation("→ 开始执行shell: {Name}", project.Name);
             if (RunnerContext.Instance.IsPreExecution) _logger.LogInformation("此任务为优先执行任务！");
             await project.Run();
+        }
+    }
+
+    private void SaveScriptGroupAfterJsRun(ScriptGroupProject project, bool hasSettingsBeforeRun)
+    {
+        if (!hasSettingsBeforeRun)
+        {
+            project.JsScriptSettingsObject = null;
+            return;
+        }
+
+        var scriptGroup = project.GroupInfo!;
+        try
+        {
+            var scriptGroupPath = Global.Absolute(@"User\ScriptGroup");
+            if (!Directory.Exists(scriptGroupPath))
+            {
+                Directory.CreateDirectory(scriptGroupPath);
+            }
+
+            var file = Path.Combine(scriptGroupPath, $"{scriptGroup.Name}.json");
+            scriptGroup.WriteToFileAtomically(file);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "保存JS脚本配置组失败: {GroupName}", scriptGroup.Name);
         }
     }
 
@@ -552,10 +602,11 @@ public partial class ScriptService : IScriptService
     public static async Task StartGameTask(bool waitForMainUi = true)
     {
         // 没启动时候，启动截图器
-        var homePageViewModel = App.GetService<HomePageViewModel>();
-        if (!homePageViewModel!.TaskDispatcherEnabled)
+        // 静态方法无法构造注入（调用方包括直接 new 出来的 TaskRunner），这里从容器取服务
+        var gameRuntimeService = App.GetService<GameRuntimeService>()!;
+        if (!gameRuntimeService.IsRunning)
         {
-            await homePageViewModel.OnStartTriggerAsync();
+            await gameRuntimeService.StartAsync();
 
             if (waitForMainUi)
             {
@@ -567,7 +618,13 @@ public partial class ScriptService : IScriptService
                     var loseFocusCount = 0;
                     while (true)
                     {
-                        if (!homePageViewModel.TaskDispatcherEnabled || !TaskContext.Instance().IsInitialized)
+                        if (CancellationContext.Instance.IsCancellationRequested)
+                        {
+                            TaskControl.Logger.LogInformation("检测到停止指令，退出启动等待");
+                            return;
+                        }
+
+                        if (!gameRuntimeService.IsRunning || !TaskContext.Instance().IsInitialized)
                         {
                             await Task.Delay(500);
                             continue;

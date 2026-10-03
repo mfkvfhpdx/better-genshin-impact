@@ -1,15 +1,12 @@
-﻿using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.Core.Script;
 using BetterGenshinImpact.GameTask;
-using BetterGenshinImpact.GameTask.Common.Element.Assets;
-using BetterGenshinImpact.Model;
-using BetterGenshinImpact.Service.Interface;
+using BetterGenshinImpact.GameTask.AutoFight;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System.ComponentModel;
+using System;
 using System.Diagnostics;
 using System.IO;
-using Wpf.Ui;
 
 namespace BetterGenshinImpact.ViewModel.Pages.View;
 
@@ -21,18 +18,35 @@ public partial class AutoFightViewModel : ObservableObject, IViewModel
     {
         Config = TaskContext.Instance().Config;
         _strategyList = LoadCustomScript(Global.Absolute(@"User\AutoGeniusInvokation"));
-        _combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+        _combatStrategyList = BuildCombatStrategyList();
+        _combatStrategyListWithoutCombo = BuildCombatStrategyListWithoutCombo();
     }
 
     public AutoFightViewModel(AllConfig config)
     {
         Config = config;
         _strategyList = LoadCustomScript(Global.Absolute(@"User\AutoGeniusInvokation"));
-        _combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+        _combatStrategyList = BuildCombatStrategyList();
+        _combatStrategyListWithoutCombo = BuildCombatStrategyListWithoutCombo();
+    }
+
+    /// <summary>战斗策略下拉列表：固定项（根据队伍自动选择 / 自动连招）+ 用户自定义策略</summary>
+    private string[] BuildCombatStrategyList()
+    {
+        return ["根据队伍自动选择", AutoFightParam.ComboStrategyName, .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+    }
+
+    /// <summary>战斗策略下拉列表（不含自动连招）：供暂未接入自动连招的任务（首领讨伐/幽境危战/地脉花）使用</summary>
+    private string[] BuildCombatStrategyListWithoutCombo()
+    {
+        return ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
     }
 
     [ObservableProperty]
     private string[] _combatStrategyList;
+
+    [ObservableProperty]
+    private string[] _combatStrategyListWithoutCombo;
 
     [ObservableProperty]
     private string[] _strategyList;
@@ -43,18 +57,37 @@ public partial class AutoFightViewModel : ObservableObject, IViewModel
         var files = Directory.GetFiles(folder, "*.*",
             SearchOption.AllDirectories);
 
-        var strategyList = new string[files.Length];
-        for (var i = 0; i < files.Length; i++)
+        var count = 0;
+        foreach (var file in files)
         {
-            if (files[i].EndsWith(".txt"))
+            if (file.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                count++;
+        }
+
+        var strategyList = new string[count];
+        var idx = 0;
+        foreach (var file in files)
+        {
+            string? ext = null;
+            if (file.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
             {
-                var strategyName = files[i].Replace(folder, "").Replace(".txt", "");
-                if (strategyName.StartsWith('\\'))
+                ext = ".txt";
+            }
+            else if (file.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                ext = ".json";
+            }
+
+            if (ext != null)
+            {
+                var relativePath = Path.GetRelativePath(folder, file);
+                var strategyName = Path.ChangeExtension(relativePath, null);
+                if (strategyName.StartsWith('\\') || strategyName.StartsWith('/'))
                 {
                     strategyName = strategyName[1..];
                 }
 
-                strategyList[i] = strategyName;
+                strategyList[idx++] = strategyName;
             }
         }
 
@@ -67,7 +100,8 @@ public partial class AutoFightViewModel : ObservableObject, IViewModel
         switch (type)
         {
             case "Combat":
-                CombatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+                CombatStrategyList = BuildCombatStrategyList();
+                CombatStrategyListWithoutCombo = BuildCombatStrategyListWithoutCombo();
                 break;
 
             case "GeniusInvocation":

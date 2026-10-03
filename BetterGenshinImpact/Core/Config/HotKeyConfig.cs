@@ -83,6 +83,12 @@ public partial class HotKeyConfig : ObservableObject
     private string _quickBuyHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
 
     [ObservableProperty]
+    private string _oneKeyClaimRewardHotkey = "";
+
+    [ObservableProperty]
+    private string _oneKeyClaimRewardHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
+
+    [ObservableProperty]
     private string _quickSereniteaPotHotkey = "";
 
     [ObservableProperty]
@@ -114,6 +120,13 @@ public partial class HotKeyConfig : ObservableObject
 
     [ObservableProperty]
     private string _takeScreenshotHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
+
+    // Recognition 模板素材制作
+    [ObservableProperty]
+    private string _recognitionTemplateEditorHotkey = "";
+
+    [ObservableProperty]
+    private string _recognitionTemplateEditorHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
 
     [ObservableProperty]
     private string _turnAroundHotkey = "";
@@ -225,6 +238,13 @@ public partial class HotKeyConfig : ObservableObject
 
     [ObservableProperty]
     private string _logBoxDisplayHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
+
+    // 遮罩指标栏展示
+    [ObservableProperty]
+    private string _overlayMetricsDisplayHotkey = "";
+
+    [ObservableProperty]
+    private string _overlayMetricsDisplayHotkeyType = HotKeyTypeEnum.KeyboardMonitor.ToString();
 
     // 键鼠录制/停止
     [ObservableProperty]

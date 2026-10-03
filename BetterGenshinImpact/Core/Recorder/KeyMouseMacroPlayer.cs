@@ -1,5 +1,5 @@
-﻿using BetterGenshinImpact.Core.Recorder.Model;
-using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Recorder.Model;
 using BetterGenshinImpact.GameTask;
 using BetterGenshinImpact.GameTask.Common;
 using BetterGenshinImpact.GameTask.Common.Map;
@@ -12,7 +12,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Fischless.WindowsInput;
 using Vanara.PInvoke;
 using Wpf.Ui.Violeta.Controls;
 
@@ -49,7 +48,7 @@ public class KeyMouseMacroPlayer
     public static async Task PlayMacro(List<MacroEvent> macroEvents, CancellationToken ct)
     {
         WorkingArea = PrimaryScreen.WorkingArea;
-        var startTime = Kernel32.GetTickCount();
+        var startTime = DateTime.UtcNow;
         foreach (var e in macroEvents)
         {
             if (ct.IsCancellationRequested)
@@ -57,42 +56,27 @@ public class KeyMouseMacroPlayer
                 return;
             }
 
-            var timeToWait = e.Time - (Kernel32.GetTickCount() - startTime);
-            if (timeToWait < 0)
+            var timeToWait = e.Time - (DateTime.UtcNow - startTime).TotalMilliseconds;
+            if (timeToWait < -1)
             {
                 TaskControl.Logger.LogDebug("无法原速重放事件{Event}，落后{TimeToWait}ms", e.Type.ToString(), (-timeToWait).ToString("F0"));
             }
             else
             {
-                await Task.Delay((int)timeToWait, ct);
+                await Task.Delay(TimeSpan.FromMilliseconds(timeToWait), ct);
             }
 
+            // 每个事件都从 InputHub 取当前通道，不缓存：回放期间截图器停止时后端会被替换。
+            // 扩展键标志由通道按真实键盘判断（Win32 见 ExtendedKeys），网页版由 WebSdk 后端映射
+            var input = InputHub.Foreground;
             switch (e.Type)
             {
                 case MacroEventType.KeyDown:
-                    var vkDown = (User32.VK)e.KeyCode!;
-                    if (InputBuilder.IsExtendedKey(vkDown))
-                    {
-                        Simulation.SendInput.Keyboard.KeyDown(false, vkDown);
-                    }
-                    else
-                    {
-                        Simulation.SendInput.Keyboard.KeyDown(vkDown);
-                    }
-
+                    input.Keyboard.KeyDown((User32.VK)e.KeyCode!);
                     break;
+
                 case MacroEventType.KeyUp:
-
-                    var vkUp = (User32.VK)e.KeyCode!;
-                    if (InputBuilder.IsExtendedKey(vkUp))
-                    {
-                        Simulation.SendInput.Keyboard.KeyUp(false, vkUp);
-                    }
-                    else
-                    {
-                        Simulation.SendInput.Keyboard.KeyUp(vkUp);
-                    }
-
+                    input.Keyboard.KeyUp((User32.VK)e.KeyCode!);
                     break;
 
                 case MacroEventType.MouseDown:
@@ -102,15 +86,15 @@ public class KeyMouseMacroPlayer
                     switch (buttonMouseDown)
                     {
                         case MouseButtons.Left:
-                            Simulation.SendInput.Mouse.MoveMouseTo(xMouseDown, yMouseDown).LeftButtonDown();
+                            input.Mouse.MoveMouseTo(xMouseDown, yMouseDown).LeftButtonDown();
                             break;
 
                         case MouseButtons.Right:
-                            Simulation.SendInput.Mouse.MoveMouseTo(xMouseDown, yMouseDown).RightButtonDown();
+                            input.Mouse.MoveMouseTo(xMouseDown, yMouseDown).RightButtonDown();
                             break;
 
                         case MouseButtons.Middle:
-                            Simulation.SendInput.Mouse.MoveMouseTo(xMouseDown, yMouseDown).MiddleButtonDown();
+                            input.Mouse.MoveMouseTo(xMouseDown, yMouseDown).MiddleButtonDown();
                             break;
 
                         case MouseButtons.None:
@@ -135,15 +119,15 @@ public class KeyMouseMacroPlayer
                     switch (buttonMouseUp)
                     {
                         case MouseButtons.Left:
-                            Simulation.SendInput.Mouse.MoveMouseTo(xMouseUp, yMouseUp).LeftButtonUp();
+                            input.Mouse.MoveMouseTo(xMouseUp, yMouseUp).LeftButtonUp();
                             break;
 
                         case MouseButtons.Right:
-                            Simulation.SendInput.Mouse.MoveMouseTo(xMouseUp, yMouseUp).RightButtonUp();
+                            input.Mouse.MoveMouseTo(xMouseUp, yMouseUp).RightButtonUp();
                             break;
 
                         case MouseButtons.Middle:
-                            Simulation.SendInput.Mouse.MoveMouseTo(xMouseUp, yMouseUp).MiddleButtonUp();
+                            input.Mouse.MoveMouseTo(xMouseUp, yMouseUp).MiddleButtonUp();
                             break;
 
                         case MouseButtons.None:
@@ -162,7 +146,7 @@ public class KeyMouseMacroPlayer
                     break;
 
                 case MacroEventType.MouseMoveTo:
-                    Simulation.SendInput.Mouse.MoveMouseTo(ToVirtualDesktopX(e.MouseX), ToVirtualDesktopY(e.MouseY));
+                    input.Mouse.MoveMouseTo(ToVirtualDesktopX(e.MouseX), ToVirtualDesktopY(e.MouseY));
                     break;
 
                 case MacroEventType.MouseWheel:
@@ -170,7 +154,7 @@ public class KeyMouseMacroPlayer
                     if (num != 0)
                     {
                         // 不支持多次的场景，但是不会出现这种情况
-                        Simulation.SendInput.Mouse.VerticalScroll(num);
+                        input.Mouse.VerticalScroll(num);
                     }
 
                     break;
@@ -178,7 +162,8 @@ public class KeyMouseMacroPlayer
                 case MacroEventType.MouseMoveBy:
                     if (e.CameraOrientation != null)
                     {
-                        var cao = CameraOrientation.Compute(TaskControl.CaptureToRectArea().SrcMat);
+                        using var capture = TaskControl.CaptureToRectArea();
+                        var cao = CameraOrientation.Compute(capture.SrcMat);
                         var diff = ((int)Math.Round(cao) - (int)e.CameraOrientation + 180) % 360 - 180;
                         diff += diff < -180 ? 360 : 0;
                         //过滤一下特别大的角度偏差
@@ -189,7 +174,7 @@ public class KeyMouseMacroPlayer
                         }
                     }
 
-                    Simulation.SendInput.Mouse.MoveMouseBy(e.MouseX, e.MouseY);
+                    input.Mouse.MoveMouseBy(e.MouseX, e.MouseY);
                     break;
 
                 default:

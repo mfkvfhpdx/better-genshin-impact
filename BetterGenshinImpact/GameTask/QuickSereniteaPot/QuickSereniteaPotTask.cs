@@ -1,11 +1,10 @@
-using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Simulator.Extensions;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation.Exception;
 using BetterGenshinImpact.GameTask.Common;
 using BetterGenshinImpact.GameTask.Common.BgiVision;
 using BetterGenshinImpact.GameTask.Model.Area;
-using BetterGenshinImpact.GameTask.QuickSereniteaPot.Assets;
-using BetterGenshinImpact.View.Drawable;
 using Microsoft.Extensions.Logging;
 using System;
 using Wpf.Ui.Violeta.Controls;
@@ -20,7 +19,8 @@ public class QuickSereniteaPotTask
         NewRetry.Do(() =>
         {
             TaskControl.Sleep(1);
-            using var ra2 = TaskControl.CaptureToRectArea(forceNew: true).Find(QuickSereniteaPotAssets.Instance.BagCloseButtonRo);
+            using var ra1 = TaskControl.CaptureToRectArea(forceNew: true);
+            using var ra2 = ra1.Find(RecognitionAssets.Get("QuickTeleport", "MapCloseButton", ra1));
             if (ra2.IsEmpty())
             {
                 throw new RetryException("背包未打开");
@@ -33,7 +33,8 @@ public class QuickSereniteaPotTask
         NewRetry.Do(() =>
         {
             TaskControl.Sleep(1);
-            using var ra2 = TaskControl.CaptureToRectArea(forceNew: true).Find(QuickSereniteaPotAssets.Instance.SereniteaPotIconRo);
+            using var ra1 = TaskControl.CaptureToRectArea(forceNew: true);
+            using var ra2 = ra1.Find(RecognitionAssets.Get("QuickSereniteaPot", "SereniteaPotIcon", ra1));
             if (ra2.IsEmpty())
             {
                 throw new RetryException("未检测到壶");
@@ -58,12 +59,10 @@ public class QuickSereniteaPotTask
             return;
         }
 
-        QuickSereniteaPotAssets.DestroyInstance();
-
         try
         {
             // 打开背包
-            Simulation.SendInput.SimulateAction(GIActions.OpenInventory);
+            InputHub.Foreground.SimulateAction(GIActions.OpenInventory);
             TaskControl.CheckAndSleep(500);
             WaitForBagToOpen();
 
@@ -78,13 +77,17 @@ public class QuickSereniteaPotTask
             // 点击放置 右下225,60
             // GameCaptureRegion.GameRegionClick((size, assetScale) => (size.Width - 225 * assetScale, size.Height - 60 * assetScale));
             // 也可以使用下面的方法点击放置按钮
-            Bv.ClickWhiteConfirmButton(TaskControl.CaptureToRectArea());
+            using (var confirmCapture = TaskControl.CaptureToRectArea())
+            {
+                Bv.ClickWhiteConfirmButton(confirmCapture);
+            }
             TaskControl.CheckAndSleep(800);
             // 校验是否部署成功
             var seccess = false;
             for (int i = 0; i < 5; i++)
             {
-                if (Bv.IsInMainUi(TaskControl.CaptureToRectArea()))
+                using var mainUiCapture = TaskControl.CaptureToRectArea();
+                if (Bv.IsInMainUi(mainUiCapture))
                 {
                     seccess = true;
                     break;
@@ -93,9 +96,10 @@ public class QuickSereniteaPotTask
             if (!seccess) {
                 for (int i = 0; i < 5; ++i)
                 {
-                    if (!Bv.IsInBigMapUi(TaskControl.CaptureToRectArea()))
+                    using var bigMapCapture = TaskControl.CaptureToRectArea();
+                    if (!Bv.IsInBigMapUi(bigMapCapture))
                     {
-                        Simulation.SendInput.SimulateAction(GIActions.OpenInventory);
+                        InputHub.Foreground.SimulateAction(GIActions.OpenInventory);
                     }
                     else
                     {
@@ -104,7 +108,7 @@ public class QuickSereniteaPotTask
                 }
             }
             // 校验F交互是否是 进入/离开[尘歌壶] 
-            var capture = TaskControl.CaptureToRectArea();
+            using var capture = TaskControl.CaptureToRectArea();
             bool isEnter = Bv.FindF(capture, "进入", "尘歌壶");
             bool isLeave = Bv.FindF(capture, "离开", "尘歌壶");
 
@@ -113,7 +117,7 @@ public class QuickSereniteaPotTask
                 TaskControl.Logger.LogInformation($"快速进出尘歌壶:识别到 {action}尘歌壶");
                 
                 // 按F触发交互
-                Simulation.SendInput.SimulateAction(GIActions.PickUpOrInteract);
+                InputHub.Foreground.SimulateAction(GIActions.PickUpOrInteract);
                 TaskControl.Logger.LogInformation($"快速进出尘歌壶:F{action}尘歌壶");
                 TaskControl.CheckAndSleep(200);
                 // 点击进入/离开尘歌壶
@@ -131,7 +135,7 @@ public class QuickSereniteaPotTask
         }
         finally
         {
-            VisionContext.Instance().DrawContent.ClearAll();
+            TaskContext.Instance().Runtime?.MaskWindowDrawingBoard.ClearAll();
         }
     }
 }

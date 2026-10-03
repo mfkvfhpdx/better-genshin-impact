@@ -8,6 +8,22 @@ using System.Text.Json.Serialization;
 
 namespace BetterGenshinImpact.Core.Config;
 
+public enum RecoverTiming
+{
+    AnyWaypoint,
+    OnlyTeleport,
+    Never
+}
+
+/// <summary>
+/// 从旧字段 OnlyInTeleportRecover 迁移到 RecoverTiming 枚举的共享方法
+/// </summary>
+internal static class RecoverTimingMigration
+{
+    public static RecoverTiming Migrate(bool onlyInTeleportRecover)
+        => onlyInTeleportRecover ? RecoverTiming.OnlyTeleport : RecoverTiming.AnyWaypoint;
+}
+
 [Serializable]
 public partial class PathingPartyConfig : ObservableObject
 {
@@ -71,7 +87,24 @@ public partial class PathingPartyConfig : ObservableObject
     // 只在传送传送点时复活
     [ObservableProperty]
     private bool _onlyInTeleportRecover = false;
-    
+
+    // 低血量回复时机
+    private RecoverTiming? _recoverTiming;
+
+    public RecoverTiming RecoverTiming
+    {
+        get
+        {
+            if (_recoverTiming is null)
+            {
+                // 首次读取时从旧字段自动迁移
+                _recoverTiming = RecoverTimingMigration.Migrate(_onlyInTeleportRecover);
+            }
+            return _recoverTiming.Value;
+        }
+        set => SetProperty(ref _recoverTiming, value);
+    }
+
     //允许在jsScript脚本中使用此地图追踪配置
     [ObservableProperty]
     private bool _jsScriptUseEnabled = true;
@@ -128,13 +161,116 @@ public partial class PathingPartyConfig : ObservableObject
 
     [ObservableProperty]
     private AutoFightConfig _autoFightConfig = new();
+    // 赶路通用临界距离（米），节点小于此距离时触发接近/切换模式
+    [ObservableProperty]
+    private int _distance = 45;
+
+    /// <summary>
+    /// 接近停止距离（米），强制小于等于 <see cref="Distance"/>，越界时自动使用 Distance 的值。
+    /// </summary>
+    [ObservableProperty]
+    private int _approachStopDistance = 25;
+
+    partial void OnDistanceChanged(int value)
+    {
+        if (ApproachStopDistance > value)
+        {
+            ApproachStopDistance = value;
+        }
+        if (MwkJumpFlyDistance <= value)
+        {
+            MwkJumpFlyDistance = value + 1;
+        }
+    }
+
+    partial void OnApproachStopDistanceChanged(int value)
+    {
+        if (value > Distance)
+        {
+            _approachStopDistance = Distance;
+        }
+    }
+
+    partial void OnMwkJumpFlyDistanceChanged(int value)
+    {
+        if (value <= Distance)
+        {
+            MwkJumpFlyDistance = Distance + 1;
+        }
+    }
+
+    /// <summary>
+    /// 赶路角色选择说明：
+    /// - 空选（""）：不进行赶路动作，仅普通跑图
+    /// - 选择具体角色：仅使用该角色的赶路逻辑
+    /// - 选择"自动"：优先使用行走位（MainAvatarIndex）角色跑图，行走位不支持赶路时，按支持列表顺序尝试使用队伍中其他角色
+    /// 支持的角色列表：玛薇卡、闲云、桑多涅、恰斯卡、流浪者、伊法、希诺宁、法尔伽、夜兰
+    /// </summary>
+    [JsonIgnore]
+    public List<string> HurryOnAvatarList { get; } = ["","自动","玛薇卡","闲云","桑多涅","恰斯卡","流浪者","伊法","希诺宁","法尔伽","夜兰"];
+
+    [JsonIgnore]
+    public List<string> TravelModeList { get; } = ["精准靠近","连续赶路"];
+
+    [ObservableProperty]
+    private string _hurryOnAvatar = "";
+
+    /// <summary>
+    /// 覆写赶路帧间隔（ms），默认 100。存在有效赶路角色时生效，有效范围 1-150，超出自动钳制。
+    /// </summary>
+    [ObservableProperty]
+    private int _hurryOnFrameInterval = 100;
+
+    [ObservableProperty]
+    private string _travelMode = "精准靠近";
+
+    /// <summary>
+    /// 接近节点时切人步行
+    /// </summary>
+    [ObservableProperty]
+    private bool _switchToWalkEnabled = false;
+
+    /// <summary>
+    /// 玛薇卡跳飞开关
+    /// </summary>
+    [ObservableProperty]
+    private bool _mwkJumpFlyEnabled = true;
+
+    /// <summary>
+    /// 玛薇卡跳飞启用距离（米），必须大于 <see cref="Distance"/>，越界时自动使用 Distance+1 的值。
+    /// </summary>
+    [ObservableProperty]
+    private int _mwkJumpFlyDistance = 75;
+
+    /// <summary>
+    /// 跳飞间隔（秒），闲云使用其1/2值
+    /// </summary>
+    [ObservableProperty]
+    private double _mwkJumpFlyIntervalSeconds = 1;
+
+    /// <summary>
+    /// 玛薇卡在车上禁用冲刺。0命玛薇卡酌情勾选，节约夜魂值。
+    /// </summary>
+    [ObservableProperty]
+    private bool _mwkDisableSprintEnabled = false;
+
+    /// <summary>
+    /// 跳飞前额外冲刺次数。6命玛薇卡可选，每次上车后前若干次跳飞改为冲刺跳飞，速度更快，夜魂值消耗更高，推荐3次。
+    /// 0 表示不使用冲刺跳飞。
+    /// </summary>
+    [ObservableProperty]
+    private int _mwkJumpFlySprintCount = 0;
+
     public static PathingPartyConfig BuildDefault()
     {
-        // 即便是不启用的情况下也设置默认值，减少后续使用的判断
+        // 运行时回退配置保持禁用标记，确保继续使用地图追踪条件和独立战斗配置
         var pathingConditionConfig = TaskContext.Instance().Config.PathingConditionConfig;
         return new PathingPartyConfig
         {
+            Enabled = false,
+            AutoFightEnabled = false,
             OnlyInTeleportRecover = pathingConditionConfig.OnlyInTeleportRecover,
+            RecoverTiming = pathingConditionConfig.RecoverTiming,
             UseGadgetIntervalMs = pathingConditionConfig.UseGadgetIntervalMs,
             AutoEatEnabled = pathingConditionConfig.AutoEatEnabled
         };

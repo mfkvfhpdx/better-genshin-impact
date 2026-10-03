@@ -1,6 +1,7 @@
-﻿using BetterGenshinImpact.Core.Recognition.OCR;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Recognition.OCR;
 using BetterGenshinImpact.Core.Recognition.OpenCv;
-using BetterGenshinImpact.Core.Simulator;
+using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation.Assets;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation.Exception;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation.Model;
@@ -39,6 +40,9 @@ public class GeniusInvokationControl
     // 定义私有构造函数，使外界不能创建该类实例
     private GeniusInvokationControl()
     {
+        var captureRect = TaskContext.Instance().SystemInfo.ScaleMax1080PCaptureRect;
+        _assets = AutoGeniusInvokationAssets.Get(captureRect.Width, captureRect.Height);
+        _actionPhaseDiceMats = _assets.ActionPhaseDiceMats;
         _config = TaskContext.Instance().Config.AutoGeniusInvokationConfig;
     }
 
@@ -63,7 +67,8 @@ public class GeniusInvokationControl
 
     private CancellationToken _ct;
 
-    private readonly AutoGeniusInvokationAssets _assets = AutoGeniusInvokationAssets.Instance;
+    private readonly AutoGeniusInvokationAssets _assets;
+    private IReadOnlyDictionary<string, Mat> _actionPhaseDiceMats;
 
     // private IGameCapture? _gameCapture;
 
@@ -86,17 +91,29 @@ public class GeniusInvokationControl
 
     public Mat CaptureGameMat()
     {
-        return CaptureToRectArea().SrcMat;
+        using var capture = CaptureToRectArea();
+        return capture.SrcMat.Clone();
     }
 
     public Mat CaptureGameGreyMat()
     {
-        return CaptureToRectArea().CacheGreyMat;
+        using var capture = CaptureToRectArea();
+        return capture.CacheGreyMat.Clone();
     }
 
     public ImageRegion CaptureGameRectArea()
     {
         return CaptureToRectArea();
+    }
+
+    private static RecognitionObject GetRecognitionObject(string objectName)
+    {
+        return RecognitionAssets.Get("AutoGeniusInvokation", objectName);
+    }
+
+    private static RecognitionObject GetRecognitionObject(string objectName, Region region)
+    {
+        return RecognitionAssets.Get("AutoGeniusInvokation", objectName, region);
     }
 
     public void CheckTask()
@@ -149,7 +166,7 @@ public class GeniusInvokationControl
 
     public void SortActionPhaseDiceMats(HashSet<ElementalType> elementSet)
     {
-        _assets.ActionPhaseDiceMats = _assets.ActionPhaseDiceMats.OrderByDescending(kvp =>
+        _actionPhaseDiceMats = _actionPhaseDiceMats.OrderByDescending(kvp =>
             {
                 for (var i = 0; i < elementSet.Count; i++)
                 {
@@ -163,7 +180,7 @@ public class GeniusInvokationControl
             })
             .ToDictionary(x => x.Key, x => x.Value);
         // 打印排序后的顺序
-        var msg = _assets.ActionPhaseDiceMats.Aggregate("",
+        var msg = _actionPhaseDiceMats.Aggregate("",
             (current, kvp) => current + $"{kvp.Key.ToElementalType().ToChinese()}| ");
         _logger.LogDebug("当前骰子排序：{Msg}", msg);
     }
@@ -174,13 +191,13 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public List<Rect> GetCharacterRects()
     {
-        var srcMat = CaptureGameMat();
+        using var srcMat = CaptureGameMat();
         var halfHeight = srcMat.Height / 2;
-        var bottomMat = new Mat(srcMat, new Rect(0, halfHeight, srcMat.Width, srcMat.Height - halfHeight));
+        using var bottomMat = new Mat(srcMat, new Rect(0, halfHeight, srcMat.Width, srcMat.Height - halfHeight));
 
         var lowPurple = new Scalar(235, 245, 198);
         var highPurple = new Scalar(255, 255, 236);
-        var gray = OpenCvCommonHelper.Threshold(bottomMat, lowPurple, highPurple);
+        using var gray = OpenCvCommonHelper.Threshold(bottomMat, lowPurple, highPurple);
 
         // 水平投影到y轴 正常只有一个连续区域
         var h = ArithmeticHelper.HorizontalProjection(gray);
@@ -362,35 +379,69 @@ public class GeniusInvokationControl
     }*/
 
     public static Dictionary<string, List<Point>> FindMultiPicFromOneImage2OneByOne(Mat srcMat,
-        Dictionary<string, Mat> imgSubDictionary, double threshold = 0.8)
+        IReadOnlyDictionary<string, Mat> imgSubDictionary, double threshold = 0.8)
     {
-        var dictionary = new Dictionary<string, List<Point>>();
+        var allMatches = new List<TemplateDetection>();
         foreach (var kvp in imgSubDictionary)
         {
-            var list = new List<Point>();
+            // 先保留每个模板命中的原始候选及分数，后续统一做跨模板去重。
+            var matches = MatchTemplateHelper.FindMatches(
+                srcMat,
+                kvp.Value,
+                TemplateMatchModes.CCoeffNormed,
+                null,
+                threshold,
+                -1);
 
-            while (true)
+            foreach (var match in matches)
             {
-                var point = MatchTemplateHelper.MatchTemplate(srcMat, kvp.Value, TemplateMatchModes.CCoeffNormed, null,
-                    threshold);
-                if (point != new Point())
-                {
-                    // 把结果给遮掩掉，避免重复识别
-                    Cv2.Rectangle(srcMat, point, new Point(point.X + kvp.Value.Width, point.Y + kvp.Value.Height),
-                        Scalar.Black, -1);
-                    list.Add(point);
-                }
-                else
-                {
-                    break;
-                }
+                allMatches.Add(new TemplateDetection(
+                    kvp.Key,
+                    new Rect(match.Location.X, match.Location.Y, kvp.Value.Width, kvp.Value.Height),
+                    match.Score));
+            }
+        }
+
+        var selectedMatches = new List<TemplateDetection>();
+        // 按分数从高到低保留候选，重叠区域默认取分数最高的那个结果。
+        foreach (var candidate in allMatches.OrderByDescending(x => x.Score))
+        {
+            if (selectedMatches.Any(x => CalculateIou(x.Bounds, candidate.Bounds) >= 0.5))
+            {
+                continue;
             }
 
-            dictionary.Add(kvp.Key, list);
+            selectedMatches.Add(candidate);
+        }
+
+        var dictionary = new Dictionary<string, List<Point>>();
+        foreach (var key in imgSubDictionary.Keys)
+        {
+            dictionary.Add(key, []);
+        }
+
+        // 去重后的候选再按元素类型回填成原调用方需要的返回结构。
+        foreach (var match in selectedMatches)
+        {
+            dictionary[match.Element].Add(match.Bounds.Location);
         }
 
         return dictionary;
     }
+
+    private static double CalculateIou(Rect first, Rect second)
+    {
+        var intersection = first.Intersect(second);
+        if (intersection.Width <= 0 || intersection.Height <= 0)
+        {
+            return 0;
+        }
+
+        var intersectionArea = (double)intersection.Width * intersection.Height;
+        return intersectionArea / (first.Width * first.Height + second.Width * second.Height - intersectionArea);
+    }
+
+    private readonly record struct TemplateDetection(string Element, Rect Bounds, double Score);
 
     /// <summary>
     /// 重投骰子
@@ -398,7 +449,7 @@ public class GeniusInvokationControl
     /// <param name="holdElementalTypes">保留的元素类型</param>
     public bool RollPhaseReRoll(params ElementalType[] holdElementalTypes)
     {
-        var gameSnapshot = CaptureGameMat();
+        using var gameSnapshot = CaptureGameMat();
         Cv2.CvtColor(gameSnapshot, gameSnapshot, ColorConversionCodes.BGRA2BGR);
         var dictionary = FindMultiPicFromOneImage2OneByOne(gameSnapshot, _assets.RollPhaseDiceMats, 0.73);
 
@@ -461,7 +512,8 @@ public class GeniusInvokationControl
     /// </summary>
     public bool ClickConfirm()
     {
-        var foundRectArea = CaptureGameRectArea().Find(_assets.ConfirmButtonRo);
+        using var ra = CaptureGameRectArea();
+        var foundRectArea = ra.Find(GetRecognitionObject("ConfirmButton", ra));
         if (!foundRectArea.IsEmpty())
         {
             foundRectArea.Click();
@@ -524,11 +576,12 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public Dictionary<string, int> ActionPhaseDice()
     {
-        var srcMat = CaptureGameMat();
+        using var srcMat = CaptureGameMat();
         Cv2.CvtColor(srcMat, srcMat, ColorConversionCodes.BGRA2BGR);
         // 切割图片后再识别 加快速度 位置没啥用，所以切割后比较方便
+        using var rightMat = CutRight(srcMat, srcMat.Width / 5);
         var dictionary =
-            FindMultiPicFromOneImage2OneByOne(CutRight(srcMat, srcMat.Width / 5), _assets.ActionPhaseDiceMats, 0.7);
+            FindMultiPicFromOneImage2OneByOne(rightMat, _actionPhaseDiceMats, 0.7);
 
         var msg = "";
         var result = new Dictionary<string, int>();
@@ -548,7 +601,7 @@ public class GeniusInvokationControl
     public void ActionPhaseElementalTuning(int currentCardCount)
     {
         var rect = TaskContext.Instance().SystemInfo.CaptureAreaRect;
-        var m = Simulation.SendInput.Mouse;
+        var m = InputHub.Foreground.Mouse;
         ClickExtension.Click(rect.X + rect.Width / 2d, rect.Y + rect.Height - 50);
         Sleep(1500);
         if (currentCardCount == 1)
@@ -571,7 +624,7 @@ public class GeniusInvokationControl
     {
         var rect = TaskContext.Instance().SystemInfo.CaptureAreaRect;
         var info = TaskContext.Instance().SystemInfo;
-        var m = Simulation.SendInput.Mouse;
+        var m = InputHub.Foreground.Mouse;
 
         var startY = rect.Y + rect.Height - 50;
         var endX = rect.X + rect.Width - 50;
@@ -640,7 +693,7 @@ public class GeniusInvokationControl
     {
         var ra = CaptureGameRectArea();
         // Cv2.ImWrite("log\\" + DateTime.Now.ToString("yyyy-MM-dd HH：mm：ss：ffff") + ".png", ra.SrcMat);
-        var foundRectArea = ra.Find(_assets.ElementalTuningConfirmButtonRo);
+        var foundRectArea = ra.Find(GetRecognitionObject("ElementalTuningConfirmButton", ra));
         if (!foundRectArea.IsEmpty())
         {
             foundRectArea.Click();
@@ -682,7 +735,8 @@ public class GeniusInvokationControl
         ClickExtension.Click(x, y);
         Sleep(1200); // 等待动画彻底弹出
 
-        var foundRectArea = CaptureGameRectArea().Find(_assets.ElementalDiceLackWarningRo);
+        using var ra = CaptureGameRectArea();
+        var foundRectArea = ra.Find(GetRecognitionObject("ElementalDiceLackWarning", ra));
         if (foundRectArea.IsEmpty())
         {
             // 多点几次保证点击到
@@ -791,7 +845,8 @@ public class GeniusInvokationControl
     /// </summary>
     public void RoundEnd()
     {
-        CaptureGameRectArea().Find(_assets.RoundEndButtonRo, foundRectArea =>
+        using var ra = CaptureGameRectArea();
+        ra.Find(GetRecognitionObject("RoundEndButton", ra), foundRectArea =>
         {
             foundRectArea.Click();
             Sleep(1000); // 有弹出动画
@@ -820,7 +875,8 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public bool IsInCharacterPick()
     {
-        return !CaptureGameRectArea().Find(_assets.InCharacterPickRo).IsEmpty();
+        using var ra = CaptureGameRectArea();
+        return !ra.Find(GetRecognitionObject("InCharacterPick", ra)).IsEmpty();
     }
 
     /// <summary>
@@ -829,7 +885,8 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public bool IsInMyAction()
     {
-        return !CaptureGameRectArea().Find(_assets.RoundEndButtonRo).IsEmpty();
+        using var ra = CaptureGameRectArea();
+        return !ra.Find(GetRecognitionObject("RoundEndButton", ra)).IsEmpty();
     }
 
     /// <summary>
@@ -838,7 +895,8 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public bool IsInOpponentAction()
     {
-        return !CaptureGameRectArea().Find(_assets.InOpponentActionRo).IsEmpty();
+        using var ra = CaptureGameRectArea();
+        return !ra.Find(GetRecognitionObject("InOpponentAction", ra)).IsEmpty();
     }
 
     /// <summary>
@@ -847,7 +905,8 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public bool IsEndPhase()
     {
-        return !CaptureGameRectArea().Find(_assets.EndPhaseRo).IsEmpty();
+        using var ra = CaptureGameRectArea();
+        return !ra.Find(GetRecognitionObject("EndPhase", ra)).IsEmpty();
     }
 
     /// <summary>
@@ -856,7 +915,8 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public bool IsActiveCharacterTakenOut()
     {
-        return !CaptureGameRectArea().Find(_assets.CharacterTakenOutRo).IsEmpty();
+        using var ra = CaptureGameRectArea();
+        return !ra.Find(GetRecognitionObject("CharacterTakenOut", ra)).IsEmpty();
     }
 
     /// <summary>
@@ -870,7 +930,8 @@ public class GeniusInvokationControl
             throw new System.Exception("未能获取到我方角色卡位置");
         }
 
-        var pList = MatchTemplateHelper.MatchTemplateMulti(CaptureGameGreyMat(), _assets.CharacterDefeatedMat, 0.8);
+        using var greyMat = CaptureGameGreyMat();
+        var pList = MatchTemplateHelper.MatchTemplateMulti(greyMat, _assets.CharacterDefeatedMat, 0.8);
 
         var res = new bool[3];
         foreach (var p in pList)
@@ -916,7 +977,8 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public bool IsDuelEnd()
     {
-        return !CaptureGameRectArea().Find(_assets.ExitDuelButtonRo).IsEmpty();
+        using var ra = CaptureGameRectArea();
+        return !ra.Find(GetRecognitionObject("ExitDuelButton", ra)).IsEmpty();
     }
 
     public Mat CutRight(Mat srcMat, int saveRightWidth)
@@ -1085,7 +1147,7 @@ public class GeniusInvokationControl
 
         // 识别角色能量
         var energyPointList =
-            MatchTemplateHelper.MatchTemplateMulti(characterMat.Clone(), _assets.CharacterEnergyOnMat, 0.8);
+            MatchTemplateHelper.MatchTemplateMulti(characterMat, _assets.CharacterEnergyOnMat, 0.8);
         character.EnergyByRecognition = energyPointList.Count;
 
         character.Hp = hp;
@@ -1112,16 +1174,16 @@ public class GeniusInvokationControl
             throw new System.Exception("未能获取到我方角色卡位置");
         }
 
-        var srcMat = CaptureGameMat();
+        using var srcMat = CaptureGameMat();
 
         int halfHeight = srcMat.Height / 2;
-        Mat bottomMat = new(srcMat, new Rect(0, halfHeight, srcMat.Width, srcMat.Height - halfHeight));
+        using Mat bottomMat = new(srcMat, new Rect(0, halfHeight, srcMat.Width, srcMat.Height - halfHeight));
 
         var lowPurple = new Scalar(239, 239, 239);
         var highPurple = new Scalar(255, 255, 255);
-        Mat gray = OpenCvCommonHelper.Threshold(bottomMat, lowPurple, highPurple);
+        using Mat gray = OpenCvCommonHelper.Threshold(bottomMat, lowPurple, highPurple);
 
-        var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(15, 10),
+        using var kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(15, 10),
             new OpenCvSharp.Point(-1, -1));
         Cv2.Dilate(gray, gray, kernel); //膨胀
 
@@ -1150,7 +1212,7 @@ public class GeniusInvokationControl
                     {
                         // 首个相交矩形就是出战角色
                         duel.CurrentCharacter = duel.Characters[i + 1];
-                        var grayMat = new Mat();
+                        using var grayMat = new Mat();
                         Cv2.CvtColor(srcMat, grayMat, ColorConversionCodes.BGR2GRAY);
                         AppendCharacterStatus(duel.CurrentCharacter, grayMat);
 
@@ -1182,7 +1244,7 @@ public class GeniusInvokationControl
             throw new System.Exception("未能获取到我方角色卡位置");
         }
 
-        var imageRegion = CaptureToRectArea();
+        using var imageRegion = CaptureToRectArea();
 
         var hpArray = new int[3]; // 1 代表未出战 2 代表出战
         for (var i = 0; i < duel.CharacterCardRects.Count; i++)
@@ -1196,7 +1258,7 @@ public class GeniusInvokationControl
 
             var cardRect = duel.CharacterCardRects[i];
             // 未出战角色的hp区域
-            var hpMat = new Mat(imageRegion.SrcMat, new Rect(cardRect.X + _config.CharacterCardExtendHpRect.X,
+            using var hpMat = new Mat(imageRegion.SrcMat, new Rect(cardRect.X + _config.CharacterCardExtendHpRect.X,
                 cardRect.Y + _config.CharacterCardExtendHpRect.Y,
                 _config.CharacterCardExtendHpRect.Width, _config.CharacterCardExtendHpRect.Height));
             var text = OcrFactory.Paddle.Ocr(hpMat);
@@ -1215,8 +1277,8 @@ public class GeniusInvokationControl
                     cardRect.Y + _config.CharacterCardExtendHpRect.Y - _config.ActiveCharacterCardSpace,
                     _config.CharacterCardExtendHpRect.Width,
                     _config.CharacterCardExtendHpRect.Height).ClampTo(imageRegion.SrcMat);
-                hpMat = new Mat(imageRegion.SrcMat, activeHpRect);
-                text = OcrFactory.Paddle.Ocr(hpMat);
+                using var activeHpMat = new Mat(imageRegion.SrcMat, activeHpRect);
+                text = OcrFactory.Paddle.Ocr(activeHpMat);
                 //Cv2.ImWrite($"log\\hp_active_{i}.jpg", hpMat);
                 Debug.WriteLine($"角色{i}出战HP位置识别结果{text}");
                 if (!string.IsNullOrWhiteSpace(text))
@@ -1276,8 +1338,8 @@ public class GeniusInvokationControl
     /// <returns></returns>
     public int GetDiceCountByOcr()
     {
-        var srcMat = CaptureGameGreyMat();
-        var diceCountMap = new Mat(srcMat, _config.MyDiceCountRect);
+        using var srcMat = CaptureGameGreyMat();
+        using var diceCountMap = new Mat(srcMat, _config.MyDiceCountRect);
         var text = OcrFactory.Paddle.OcrWithoutDetector(diceCountMap);
         text = text.Replace(" ", "")
             .Replace("①", "1")

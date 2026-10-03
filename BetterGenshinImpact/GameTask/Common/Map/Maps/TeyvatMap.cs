@@ -16,9 +16,9 @@ public class TeyvatMap : SceneBaseMap
 {
     #region 每次地图扩大都要更新的参数
 
-    public static readonly int GameMapRows = 15; // 游戏坐标下地图块的行数
+    public static readonly int GameMapRows = 19; // 游戏坐标下地图块的行数
     public static readonly int GameMapCols = 22; // 游戏坐标下地图块的列数
-    public static readonly int GameMapUpRows = 7; // 游戏坐标下 左上角离地图原点的行数(注意原点在块的右下角)
+    public static readonly int GameMapUpRows = 11; // 游戏坐标下 左上角离地图原点的行数(注意原点在块的右下角)
     public static readonly int GameMapLeftCols = 15; // 游戏坐标下 左上角离地图原点的列数(注意原点在块的右下角)
 
     #endregion 每次地图扩大都要更新的参数
@@ -44,6 +44,14 @@ public class TeyvatMap : SceneBaseMap
         greyBigMapMat = ResizeHelper.Resize(greyBigMapMat, 1d / 4);
         var layer = BigMapTeyvat256Layer.GetInstance(this);
         return SiftMatcher.Match(layer.TrainKeyPoints, layer.TrainDescriptors, greyBigMapMat);
+    }
+
+    public override Point2f GetBigMapPosition(Mat greyBigMapMat, Point2f expectedCenter)
+    {
+        var expectedCenter256 = new Point2f(
+            expectedCenter.X / BigMap256ScaleTo2048,
+            expectedCenter.Y / BigMap256ScaleTo2048);
+        return BigMapTeyvat256Layer.GetInstance(this).GetBigMapPosition(greyBigMapMat, expectedCenter256);
     }
 
     public override Rect GetBigMapRect(Mat greyBigMapMat)

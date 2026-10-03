@@ -1,11 +1,11 @@
-﻿using System;
+using BetterGenshinImpact.Core.Input;
+using System;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGenshinImpact.Core.Recognition;
-using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.Core.Simulator.Extensions;
 using BetterGenshinImpact.GameTask.Common.Element.Assets;
 using BetterGenshinImpact.GameTask.Model.Area;
@@ -52,7 +52,7 @@ public class ClaimEncounterPointsRewardsTask
 
         await Delay(200, ct);
 
-        TaskContext.Instance().PostMessageSimulator.SimulateAction(GIActions.OpenAdventurerHandbook); // F1 开书
+        InputHub.Background.SimulateAction(GIActions.OpenAdventurerHandbook); // F1 开书
 
         await Delay(1000, ct);
 
@@ -70,7 +70,8 @@ public class ClaimEncounterPointsRewardsTask
 
             if (wt != null)
             {
-                if (ClickClaimBtn(CaptureToRectArea()))
+                using var claimCapture = CaptureToRectArea();
+                if (ClickClaimBtn(claimCapture))
                 {
                     earlyClaim = true;
                     return true;
@@ -101,7 +102,8 @@ public class ClaimEncounterPointsRewardsTask
         await Delay(1000, ct);
 
         // 领取
-        if (ClickClaimBtn(CaptureToRectArea()))
+        using var claimCapture = CaptureToRectArea();
+        if (ClickClaimBtn(claimCapture))
         {
             await Delay(1000, ct);
 
@@ -114,7 +116,7 @@ public class ClaimEncounterPointsRewardsTask
 
     private static bool ClickClaimBtn(ImageRegion ra2)
     {
-        var claimBtn = ra2.Find(ElementAssets.Instance.BtnClaimEncounterPointsRewards);
+        var claimBtn = ra2.Find(ElementRecognition.Get("BtnClaimEncounterPointsRewards", ra2));
         if (claimBtn.IsExist())
         {
             claimBtn.Click();

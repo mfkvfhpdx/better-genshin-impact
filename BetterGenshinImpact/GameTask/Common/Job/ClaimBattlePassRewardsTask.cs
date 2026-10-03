@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BetterGenshinImpact.Core.Input;
+using System;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -54,7 +55,7 @@ public class ClaimBattlePassRewardsTask
         await _returnMainUiTask.Start(ct);
 
         await Delay(200, ct);
-        TaskContext.Instance().PostMessageSimulator.SimulateAction(GIActions.OpenBattlePassScreen); // F4 开纪行
+        InputHub.Background.SimulateAction(GIActions.OpenBattlePassScreen); // F4 开纪行
 
         // 先领取纪行点数，避免一进入纪行就因可选奖励弹窗阻塞后续流程
         await Delay(1000, ct);
@@ -65,9 +66,13 @@ public class ClaimBattlePassRewardsTask
         // 最后再回到奖励页领取，若存在手动选择奖励则仅记录日志提醒
         await Delay(2500, ct); // 等待升级动画
         // 还可能存在领取到原石的情况
-        if (CaptureToRectArea().Find(ElementAssets.Instance.PrimogemRo).IsExist())
+        using (var ra = CaptureToRectArea())
         {
-            TaskContext.Instance().PostMessageSimulator.KeyPress(User32.VK.VK_ESCAPE);
+            using var primogem = ra.Find(ElementRecognition.Get("Primogem", ra));
+            if (primogem.IsExist())
+            {
+                InputHub.Background.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
+            }
         }
         GameCaptureRegion.GameRegion1080PPosClick(858, 45);
         await Delay(1500, ct);
@@ -98,9 +103,9 @@ public class ClaimBattlePassRewardsTask
                 return true;
             }
 
-            if (ra2.Find(ElementAssets.Instance.PrimogemRo).IsExist())
+            if (ra2.Find(ElementRecognition.Get("Primogem", ra2)).IsExist())
             {
-                TaskContext.Instance().PostMessageSimulator.KeyPress(User32.VK.VK_ESCAPE);
+                InputHub.Background.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
             }
 
             return true;
@@ -119,15 +124,15 @@ public class ClaimBattlePassRewardsTask
             return true;
         }
 
-        var hasCancelButton = HasDialogButton(region, ElementAssets.Instance.BtnBlackCancel)
-                              || HasDialogButton(region, ElementAssets.Instance.BtnWhiteCancel);
+        var hasCancelButton = HasDialogButton(region, ElementRecognition.Get("BtnBlackCancel", region))
+                              || HasDialogButton(region, ElementRecognition.Get("BtnWhiteCancel", region));
         if (!hasCancelButton)
         {
             return false;
         }
 
-        return HasDialogButton(region, ElementAssets.Instance.BtnBlackConfirm)
-               || HasDialogButton(region, ElementAssets.Instance.BtnWhiteConfirm);
+        return HasDialogButton(region, ElementRecognition.Get("BtnBlackConfirm", region))
+               || HasDialogButton(region, ElementRecognition.Get("BtnWhiteConfirm", region));
     }
 
     private static bool HasDialogButton(ImageRegion region, RecognitionObject recognitionObject)

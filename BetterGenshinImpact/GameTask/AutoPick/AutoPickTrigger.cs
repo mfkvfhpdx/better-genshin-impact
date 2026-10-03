@@ -1,9 +1,9 @@
+using BetterGenshinImpact.Core.Input;
 using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Core.Recognition.OCR;
 using BetterGenshinImpact.Core.Recognition.ONNX.SVTR;
 using BetterGenshinImpact.Core.Script.Dependence.Model.TimerConfig;
-using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask.AutoPick.Assets;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service;
@@ -27,64 +27,126 @@ public partial class AutoPickTrigger : ITaskTrigger
     private readonly ILogger<AutoPickTrigger> _logger = App.GetLogger<AutoPickTrigger>();
 
     public string Name => "自动拾取";
-    public bool IsEnabled { get; set; }
+    public bool IsEnabledByConfig => TaskContext.Instance().Config.AutoPickConfig.Enabled;
     public int Priority => 30;
     public bool IsExclusive => false;
 
-    private readonly AutoPickAssets _autoPickAssets;
+    private AutoPickAssets _autoPickAssets = null!;
 
     /// <summary>
-    /// 拾取黑名单
+    /// 黑名单模式的不拾取列表
     /// </summary>
     private HashSet<string> _blackList = [];
 
     /// <summary>
-    /// 拾取黑名单(模糊匹配)
+    /// 黑名单模式的不拾取列表(模糊匹配)
     /// </summary>
     private List<string> _fuzzyBlackList = [];
 
     /// <summary>
-    /// 拾取白名单
+    /// 黑名单模式的拾取列表
     /// </summary>
     private HashSet<string> _whiteList = [];
 
-    private RecognitionObject _pickRo;
+    /// <summary>
+    /// 白名单模式最终需要拾取的列表
+    /// </summary>
+    private HashSet<string> _whitelistModeFinalPickList = [];
 
-    // 外部配置
+    private RecognitionObject _pickRo = null!;
+
+    /// <summary>
+    /// 脚本传入的外部配置，只在本次启用期间有效
+    /// </summary>
     private AutoPickExternalConfig? _externalConfig;
 
-    public AutoPickTrigger()
+    /// <summary>
+    /// 名单文件版本号。界面修改名单文件后递增，触发器下一次拾取时重读
+    /// </summary>
+    private static int _listVersion;
+
+    /// <summary>
+    /// 当前名单对应的缓存键，键不变就不重读文件
+    /// </summary>
+    private (AutoPickMode Mode, bool BlacklistModePickEnabled, bool WhitelistModeDoNotPickEnabled, int Version)? _loadedListKey;
+
+    /// <summary>
+    /// 名单文件被界面修改后调用，下一次拾取时重读
+    /// </summary>
+    public static void ReloadLists()
     {
-        _autoPickAssets = AutoPickAssets.Instance;
-        _pickRo = _autoPickAssets.PickRo;
+        Interlocked.Increment(ref _listVersion);
     }
 
-    public AutoPickTrigger(AutoPickExternalConfig? config) : this()
+    public void OnEnabled(object? options)
     {
-        _externalConfig = config;
+        _externalConfig = options as AutoPickExternalConfig;
+        _lastText = string.Empty;
+        _prevClickFrameIndex = -1;
     }
 
-    public void Init()
+    public void OnDisabled()
     {
-        var config = TaskContext.Instance().Config.AutoPickConfig;
-        IsEnabled = config.Enabled;
+        _externalConfig = null;
+    }
 
-        if (config.BlackListEnabled)
+    /// <summary>
+    /// 拾取模式、名单开关或名单文件变化时重读名单，否则直接使用缓存
+    /// </summary>
+    private void EnsureLists(AutoPickConfig config)
+    {
+        var key = (config.Mode, config.BlacklistModePickEnabled, config.WhitelistModeDoNotPickEnabled, Volatile.Read(ref _listVersion));
+        if (_loadedListKey == key)
         {
-            _blackList = ReadJson(@"Assets\Config\Pick\default_pick_black_lists.json");
-            var userBlackList = ReadText(@"User\pick_black_lists.txt");
-            if (userBlackList.Count > 0)
+            return;
+        }
+
+        // 读取失败时也记下这个键，同一份配置只提示一次
+        _loadedListKey = key;
+        LoadLists(config);
+    }
+
+    private void LoadLists(AutoPickConfig config)
+    {
+        var blackList = new HashSet<string>();
+        var fuzzyBlackList = new List<string>();
+        var whiteList = new HashSet<string>();
+        var whitelistModeFinalPickList = new HashSet<string>();
+
+        if (config.Mode == AutoPickMode.Blacklist)
+        {
+            blackList = ReadJson(@"Assets\Config\Pick\default_pick_black_lists.json");
+            blackList.UnionWith(ReadText(@"User\pick_black_lists.txt"));
+            fuzzyBlackList = ReadTextList(@"User\pick_fuzzy_black_lists.txt");
+
+            if (config.BlacklistModePickEnabled)
             {
-                _blackList.UnionWith(userBlackList);
+                whiteList = ReadText(@"User\pick_white_lists.txt");
             }
-
-            _fuzzyBlackList = ReadTextList(@"User\pick_fuzzy_black_lists.txt");
         }
-
-        if (config.WhiteListEnabled)
+        else
         {
-            _whiteList = ReadText(@"User\pick_white_lists.txt");
+            whitelistModeFinalPickList = ReadJson(@"Assets\Config\Pick\default_pick_white_lists.json");
+            whitelistModeFinalPickList.UnionWith(ReadText(@"User\pick_whitelist_mode_pick_lists.txt"));
+            if (config.WhitelistModeDoNotPickEnabled)
+            {
+                whitelistModeFinalPickList.ExceptWith(ReadText(@"User\pick_whitelist_mode_do_not_pick_lists.txt"));
+            }
         }
+
+        // 使用完整的新集合替换旧集合，防止关闭规则或切换模式后残留旧数据。
+        _blackList = blackList;
+        _fuzzyBlackList = fuzzyBlackList;
+        _whiteList = whiteList;
+        _whitelistModeFinalPickList = whitelistModeFinalPickList;
+    }
+
+    /// <summary>
+    /// 名单在截图线程上读取，弹窗投递到 UI 线程，不等待用户确认
+    /// </summary>
+    private static void ShowListReadError()
+    {
+        UIDispatcherHelper.BeginInvoke(() => ThemedMessageBox.Error("读取拾取名单配置失败，请确认修改后的名单内容格式是否正确！"));
     }
 
     private HashSet<string> ReadJson(string jsonFilePath)
@@ -99,8 +161,8 @@ public partial class AutoPickTrigger : ITaskTrigger
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "读取拾取黑/白名单失败");
-            ThemedMessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
+            _logger.LogError(e, "读取拾取名单配置失败");
+            ShowListReadError();
         }
 
         return [];
@@ -119,8 +181,8 @@ public partial class AutoPickTrigger : ITaskTrigger
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "读取拾取黑/白名单失败");
-            ThemedMessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
+            _logger.LogError(e, "读取拾取名单配置失败");
+            ShowListReadError();
         }
 
         return [];
@@ -139,8 +201,8 @@ public partial class AutoPickTrigger : ITaskTrigger
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "读取拾取黑/白名单失败");
-            ThemedMessageBox.Error("读取拾取黑/白名单失败，请确认修改后的拾取黑/白名单内容格式是否正确！");
+            _logger.LogError(e, "读取拾取名单配置失败");
+            ShowListReadError();
         }
 
         return [];
@@ -161,10 +223,8 @@ public partial class AutoPickTrigger : ITaskTrigger
 
     public void OnCapture(CaptureContent content)
     {
-        while (RunnerContext.Instance.AutoPickTriggerStopCount > 0)
-        {
-            Thread.Sleep(1000);
-        }
+        _autoPickAssets = AutoPickAssets.Get(content.CaptureRectArea, TaskContext.Instance().Config.AutoPickConfig.PickKey);
+        _pickRo = _autoPickAssets.PickRo;
 
         var speedTimer = new SpeedTimer();
 
@@ -176,7 +236,7 @@ public partial class AutoPickTrigger : ITaskTrigger
             if (HasScrollIcon(content.CaptureRectArea))
             {
                 // 滚轮下
-                Simulation.SendInput.Mouse.VerticalScroll(2);
+                InputHub.Foreground.Mouse.VerticalScroll(2);
                 Thread.Sleep(50);
             }
 
@@ -188,15 +248,16 @@ public partial class AutoPickTrigger : ITaskTrigger
         if (_externalConfig is { ForceInteraction: true })
         {
             LogPick(content, "直接拾取");
-            Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+            InputHub.Foreground.Keyboard.KeyPress(_autoPickAssets.PickVk);
             return;
         }
 
         var scale = TaskContext.Instance().SystemInfo.AssetScale;
         var config = TaskContext.Instance().Config.AutoPickConfig;
+        EnsureLists(config);
 
         // 存在 L 键位是千星奇遇，无需拾取
-        using var lKeyRa = content.CaptureRectArea.Find(_autoPickAssets.LRo);
+        using var lKeyRa = content.CaptureRectArea.Find(RecognitionAssets.Get("AutoPick", "L", content.CaptureRectArea));
         if (lKeyRa.IsExist())
         {
             return;
@@ -204,10 +265,12 @@ public partial class AutoPickTrigger : ITaskTrigger
 
         // 识别到拾取键，开始识别物品图标
         var isExcludeIcon = false;
-        _autoPickAssets.ChatIconRo.RegionOfInterest = new Rect(
+        var iconRoi = new Rect(
             foundRectArea.X + (int)(config.ItemIconLeftOffset * scale), foundRectArea.Y,
             (int)((config.ItemTextLeftOffset - config.ItemIconLeftOffset) * scale), foundRectArea.Height);
-        using var chatIconRa = content.CaptureRectArea.Find(_autoPickAssets.ChatIconRo);
+        var chatIconRo = RecognitionAssets.Get("AutoSkip", "ChatIcon", content.CaptureRectArea).Clone();
+        chatIconRo.RegionOfInterest = iconRoi;
+        using var chatIconRa = content.CaptureRectArea.Find(chatIconRo);
         speedTimer.Record("识别聊天图标");
         if (!chatIconRa.IsEmpty())
         {
@@ -216,8 +279,9 @@ public partial class AutoPickTrigger : ITaskTrigger
         }
         else
         {
-            _autoPickAssets.SettingsIconRo.RegionOfInterest = _autoPickAssets.ChatIconRo.RegionOfInterest;
-            using var settingsIconRa = content.CaptureRectArea.Find(_autoPickAssets.SettingsIconRo);
+            var settingsIconRo = RecognitionAssets.Get("AutoPick", "SettingsIcon", content.CaptureRectArea).Clone();
+            settingsIconRo.RegionOfInterest = iconRoi;
+            using var settingsIconRa = content.CaptureRectArea.Find(settingsIconRo);
             speedTimer.Record("识别设置图标");
             if (!settingsIconRa.IsEmpty())
             {
@@ -226,17 +290,18 @@ public partial class AutoPickTrigger : ITaskTrigger
             }
         }
 
-        if (!config.WhiteListEnabled && isExcludeIcon)
+        if (config.Mode == AutoPickMode.Whitelist)
         {
-            // 默认不拾取且没有白名单直接放弃OCR
-            return;
+            // 白名单模式下，安全图标排除优先于拾取列表。
+            if (isExcludeIcon)
+            {
+                return;
+            }
         }
-
-        if (!config.WhiteListEnabled && !config.BlackListEnabled && !isExcludeIcon)
+        else if (!config.BlacklistModePickEnabled && isExcludeIcon)
         {
-            // 没有黑白名单直接拾取
-            Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
-            LogPick(content, "黑名单未启用，直接拾取");
+            // 默认不拾取且没有拾取规则直接放弃OCR
+            return;
         }
 
         //if (config.FastModeEnabled && !isExcludeIcon)
@@ -246,7 +311,7 @@ public partial class AutoPickTrigger : ITaskTrigger
         //    {
         //        _fastModePickCount = 0;
         //        LogPick(content, "急速拾取");
-        //        Simulation.SendInput.Keyboard.KeyPress(VirtualKeyCode.VK_F);
+        //        InputHub.Foreground.Keyboard.KeyPress(VirtualKeyCode.VK_F);
         //    }
         //    return;
         //}
@@ -264,7 +329,8 @@ public partial class AutoPickTrigger : ITaskTrigger
 
         using var gradMat = new Mat(content.CaptureRectArea.CacheGreyMat,
             new Rect(textRect.X, textRect.Y, textRect.Width, Math.Min(textRect.Height, 3)));
-        var avgGrad = gradMat.Sobel(MatType.CV_32F, 1, 0).Mean().Val0;
+        using var sobelMat = gradMat.Sobel(MatType.CV_32F, 1, 0);
+        var avgGrad = sobelMat.Mean().Val0;
         if (avgGrad < -3)
         {
             Debug.WriteLine($"AutoPickTrigger: 已在拾取中，跳过本次拾取 {avgGrad}");
@@ -274,7 +340,7 @@ public partial class AutoPickTrigger : ITaskTrigger
         string text;
         if (config.OcrEngine == nameof(PickOcrEngineEnum.Yap))
         {
-            var textMat = new Mat(content.CaptureRectArea.CacheGreyMat, textRect);
+            using var textMat = new Mat(content.CaptureRectArea.CacheGreyMat, textRect);
             text = TextInferenceFactory.Pick.Value.Inference(textMat);
         }
         else
@@ -330,10 +396,21 @@ public partial class AutoPickTrigger : ITaskTrigger
                 return;
             }
 
-            if (config.WhiteListEnabled && _whiteList.Contains(text))
+            if (config.Mode == AutoPickMode.Whitelist)
+            {
+                if (_whitelistModeFinalPickList.Contains(text))
+                {
+                    LogPick(content, text);
+                    InputHub.Foreground.Keyboard.KeyPress(_autoPickAssets.PickVk);
+                }
+
+                return;
+            }
+
+            if (config.BlacklistModePickEnabled && _whiteList.Contains(text))
             {
                 LogPick(content, text);
-                Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+                InputHub.Foreground.Keyboard.KeyPress(_autoPickAssets.PickVk);
                 return;
             }
 
@@ -345,26 +422,23 @@ public partial class AutoPickTrigger : ITaskTrigger
                 return;
             }
 
-            if (config.BlackListEnabled)
+            if (_blackList.Contains(text))
             {
-                if (_blackList.Contains(text))
+                return;
+            }
+
+            if (_fuzzyBlackList.Count > 0)
+            {
+                if (_fuzzyBlackList.Any(item => text.Contains(item)))
                 {
                     return;
-                }
-
-                if (_fuzzyBlackList.Count > 0)
-                {
-                    if (_fuzzyBlackList.Any(item => text.Contains(item)))
-                    {
-                        return;
-                    }
                 }
             }
 
             speedTimer.Record("黑名单判断");
 
             LogPick(content, text);
-            Simulation.SendInput.Keyboard.KeyPress(AutoPickAssets.Instance.PickVk);
+            InputHub.Foreground.Keyboard.KeyPress(_autoPickAssets.PickVk);
         }
 
         speedTimer.DebugPrint();
