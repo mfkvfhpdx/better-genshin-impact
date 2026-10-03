@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +19,7 @@ using BetterGenshinImpact.GameTask.Common.Job;
 using BetterGenshinImpact.GameTask.FarmingPlan;
 using BetterGenshinImpact.GameTask.LogParse;
 using BetterGenshinImpact.GameTask.TaskProgress;
+using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notification.Model.Enum;
@@ -31,25 +32,7 @@ public partial class ScriptService : IScriptService
 {
     private readonly ILogger<ScriptService> _logger = App.GetLogger<ScriptService>();
     private readonly BlessingOfTheWelkinMoonTask _blessingOfTheWelkinMoonTask = new();
-    private static bool IsCurrentHourEqual(string input)
-    {
-        // 尝试将输入字符串转换为整数
-        if (int.TryParse(input, out int hour))
-        {
-            // 验证小时是否在合法范围内（0-23）
-            if (hour is >= 0 and <= 23)
-            {
-                // 获取当前小时数
-                int currentHour = DateTime.Now.Hour;
-                // 判断是否相等
-                return currentHour == hour;
-            }
-        }
 
-        // 如果输入非数字或不合法，返回 false
-        return false;
-    }
-    
     public bool ShouldSkipTask(ScriptGroupProject project,bool enableLogging = true)
     {
         if (project.Status != "Enabled")
@@ -69,7 +52,7 @@ public partial class ScriptService : IScriptService
         }
         if (project.GroupInfo is { Config.PathingConfig.Enabled: true } )
         {
-            if (IsCurrentHourEqual(project.GroupInfo.Config.PathingConfig.SkipDuring))
+            if (TimeRangeHelper.IsInTimeRange(project.GroupInfo.Config.PathingConfig.SkipDuring))
             {
                 if(enableLogging) _logger.LogInformation($"{project.Name}任务已到禁止执行时段，将跳过！");
                 return true;
@@ -93,7 +76,7 @@ public partial class ScriptService : IScriptService
             
         }
 
-        if (TaskContext.Instance().Config.OtherConfig.FarmingPlanConfig.Enabled)
+        if (TaskContext.Instance().Config.OtherConfig.FarmingPlanConfig.Enabled && project.Type == "Pathing")
         {
             try
             {
@@ -427,7 +410,7 @@ public partial class ScriptService : IScriptService
         
 
         // 还原定时器
-        TaskTriggerDispatcher.Instance().SetTriggers(GameTaskManager.LoadInitialTriggers());
+        // TaskTriggerDispatcher.Instance().SetTriggers(GameTaskManager.LoadInitialTriggers());
         
         if (!string.IsNullOrEmpty(groupName)&&!RunnerContext.Instance.IsPreExecution)
         {
@@ -627,6 +610,14 @@ public partial class ScriptService : IScriptService
                     }
                 });
             }
+        }
+
+        // 等待命令行启动时并行执行的自动更新完成（如果有）
+        var pendingUpdate = ScriptRepoUpdater.Instance.CommandLineAutoUpdateTask;
+        if (pendingUpdate != null)
+        {
+            await pendingUpdate;
+            ScriptRepoUpdater.Instance.CommandLineAutoUpdateTask = null;
         }
     }
 }

@@ -16,6 +16,11 @@ using BetterGenshinImpact.GameTask.Common.Map.Maps.Base;
 using BetterGenshinImpact.GameTask.Common.Exceptions;
 using BetterGenshinImpact.GameTask.Common.Map.Maps;
 using BetterGenshinImpact.Helpers.Extensions;
+using BetterGenshinImpact.Core.Recognition.ONNX;
+using System.Linq;
+using BetterGenshinImpact.View.Drawable;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace BetterGenshinImpact.Core.Script.Dependence;
 
@@ -182,7 +187,7 @@ public class Genshin
     /// 获取当前在大地图上的位置坐标
     /// </summary>
     /// <returns>包含X和Y坐标的Point2f结构体</returns>
-    public Point2f GetPositionFromBigMap()
+    public Point2f? GetPositionFromBigMap()
     {
         TpTask tpTask = new TpTask(CancellationContext.Instance.Cts.Token);
         return tpTask.GetPositionFromBigMap(MapTypes.Teyvat.ToString());
@@ -193,7 +198,7 @@ public class Genshin
     /// </summary>
     /// <param name="mapName">大地图名称</param>
     /// <returns>包含X和Y坐标的Point2f结构体</returns>
-    public Point2f GetPositionFromBigMap(string mapName)
+    public Point2f? GetPositionFromBigMap(string mapName)
     {
         TpTask tpTask = new TpTask(CancellationContext.Instance.Cts.Token);
         return tpTask.GetPositionFromBigMap(mapName);
@@ -203,7 +208,7 @@ public class Genshin
     /// 获取当前在小地图上的位置坐标
     /// </summary>
     /// <returns>包含X和Y坐标的Point2f结构体</returns>
-    public Point2f GetPositionFromMap()
+    public Point2f? GetPositionFromMap()
     {
         return GetPositionFromMap(MapTypes.Teyvat.ToString());
     }
@@ -220,7 +225,7 @@ public class Genshin
     /// <param name="mapName">大地图名称</param>
     /// <param name="cacheTimeMs">缓存时间，单位毫秒，默认900ms</param>
     /// <returns>包含X和Y坐标的Point2f结构体</returns>
-    public Point2f GetPositionFromMap(string mapName, int cacheTimeMs = 900)
+    public Point2f? GetPositionFromMap(string mapName, int cacheTimeMs = 900)
     {
         var imageRegion = CaptureToRectArea();
         if (!Bv.IsInMainUi(imageRegion))
@@ -241,7 +246,7 @@ public class Genshin
     /// <param name="x">世界坐标x</param>
     /// <param name="y">世界坐标y</param>
     /// <returns>包含X和Y坐标的Point2f结构体</returns>
-    public Point2f GetPositionFromMap(string mapName, float x, float y)
+    public Point2f? GetPositionFromMap(string mapName, float x, float y)
     {
         var imageRegion = CaptureToRectArea();
         if (!Bv.IsInMainUi(imageRegion))
@@ -377,6 +382,15 @@ public class Genshin
     {
         await new ExitAndReloginJob().Start(CancellationContext.Instance.Cts.Token);
     }
+    
+    /// <summary>
+    /// 进出千星奇域
+    /// </summary>
+    /// <returns></returns>
+    public async Task WonderlandCycle()
+    {
+        await new EnterAndExitWonderlandJob().Start(CancellationContext.Instance.Cts.Token);
+    }
 
     /// <summary>
     /// 调整时间
@@ -409,4 +423,17 @@ public class Genshin
             throw new ArgumentException($"无效的分钟值: {minute}，必须是 0-59 之间的整数字符", nameof(minute));
         await new SetTimeTask().Start(h, m, CancellationContext.Instance.Cts.Token, skip);
     }
+
+    // /// <summary>
+    // /// 莉奈娅挖矿，调试使用，暂时注释
+    // /// </summary>
+    // /// <param name="mineCount">射箭次数，默认1</param>
+    // /// <param name="scanRounds">大循环寻矿次数。不传则默认5；传单个数字时与射箭次数相同</param>
+    // public async Task StartMining(int? mineCount = null, int? scanRounds = null)
+    // {
+    //     var actualMine = mineCount ?? 1;
+    //     var actualScan = scanRounds ?? (mineCount ?? 5);
+    //     if (actualScan < actualMine) actualScan = actualMine;
+    //     await new LinneaMiningTask(actualScan, actualMine).Start(CancellationContext.Instance.Cts.Token);
+    // }
 }

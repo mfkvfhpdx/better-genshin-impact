@@ -50,8 +50,8 @@ public partial class MapViewerViewModel : ObservableObject
         _mapName = mapName;
         Init(mapName);
         var matchingMethod = TaskContext.Instance().Config.PathingConditionConfig.MapMatchingMethod;
-        var center = MapManager.GetMap(_mapName, matchingMethod).ConvertGenshinMapCoordinatesToImageCoordinates(512, 512);
-        _mapBitmap = ClipMat(new Point2f(center.x, center.y)).ToWriteableBitmap();
+        var center = MapManager.GetMap(_mapName, matchingMethod).ConvertGenshinMapCoordinatesToImageCoordinates(new Point2f(512, 512));
+        _mapBitmap = ClipMat(new Point2f(center.X, center.Y)).ToWriteableBitmap();
         WeakReferenceMessenger.Default.Register<PropertyChangedMessage<object>>(this, (sender, msg) =>
         {
             if (msg.PropertyName == "SendCurrentPosition")
@@ -105,6 +105,10 @@ public partial class MapViewerViewModel : ObservableObject
         else if (mapName == MapTypes.AncientSacredMountain.ToString())
         {
             _mapImage = new Mat(Global.Absolute(@"Assets/Map/AncientSacredMountain/AncientSacredMountain_0_1024.png"));
+        }
+        else if (mapName == MapTypes.TempleOfSpace.ToString())
+        {
+            _mapImage = new Mat(Global.Absolute(@"Assets/Map/TempleOfSpace/TempleOfSpace_0_1024.png"));
         }
         else
         {
@@ -219,7 +223,7 @@ public partial class MapViewerViewModel : ObservableObject
     private Point ConvertToMapPoint(Waypoint point)
     {
         var matchingMethod = TaskContext.Instance().Config.PathingConditionConfig.MapMatchingMethod;
-        var (x, y) = MapManager.GetMap(_mapName, matchingMethod).ConvertGenshinMapCoordinatesToImageCoordinates((float)point.X, (float)point.Y);
+        var (x, y) = MapManager.GetMap(_mapName, matchingMethod).ConvertGenshinMapCoordinatesToImageCoordinates(new Point2f((float)point.X, (float)point.Y));
         return new Point(x, y);
     }
 

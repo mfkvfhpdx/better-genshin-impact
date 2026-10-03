@@ -163,7 +163,7 @@
   },
   {
     "name": "胡桃",
-    "scriptContent1": "charge(0.3),wait(0.1),dash,wait(0.1),charge(0.3),wait(0.1),dash,wait(0.1),charge(0.3),wait(0.1),j,wait(0.52)",
+    "scriptContent1": "click,wait(0.25),click,wait(0.05),mousedown,wait(0.265),mouseup,click(right),wait(0.02),keypress(S),wait(0.02),keypress(w),wait(0.35)",
     "macroPriority": 0
   },
   {
@@ -465,7 +465,7 @@
   {
     "name": "玛薇卡",
     "scriptContent1": "keydown(space),keyup(space),wait(0.08),keydown(space),keyup(space),wait(0.08),keydown(space),keyup(space),wait(1.3)",
-    "scriptContent2": "mousedown(left),wait(0.3),mouseup(left),wait(0.6),mousedown(right),wait(0.08),mouseup(right),wait(0.02),mousedown(left),wait(0.15),mouseup(left),wait(0.05)",
+    "scriptContent2": "wait(0.03),mousedown(left),wait(0.33),mouseup(left),wait(0.05),mousedown(left),wait(0.18),mousedown(right),wait(0.05),mouseup(right),wait(0.05),mouseup(left),wait(0.05),mousedown(left),wait(0.18),mousedown(right),wait(0.05),mouseup(right),wait(1),mouseup(left),wait(0.27)",
     "macroPriority": 0
   },
   {
