@@ -284,6 +284,11 @@ public partial class PathExecutor
                         break;
                     }
                 }
+                catch (TimeoutException timeoutException)
+                {
+                    StartSkipOtherOperations();
+                    Logger.LogWarning(timeoutException.Message);
+                }
                 catch (RetryException retryException)
                 {
                     StartSkipOtherOperations();

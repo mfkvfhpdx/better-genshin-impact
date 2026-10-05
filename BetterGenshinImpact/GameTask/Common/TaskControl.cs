@@ -96,8 +96,10 @@ public class TaskControl
         }
     }
 
-    private static void CheckAndActivateGameWindow()
+    private static void CheckAndActivateGameWindow(CancellationToken ct = default)
     {
+        ThrowIfCancellationRequested(ct);
+
         var window = TaskContext.Instance().Runtime?.Window;
         if (window is { RequiresForeground: false })
         {
@@ -129,6 +131,8 @@ public class TaskControl
         //未激活则尝试恢复窗口
         while (!SystemControl.IsGenshinImpactActiveByProcess())
         {
+            ThrowIfCancellationRequested(ct);
+
             if (count == 0)
             {
                 var autoRestartConfig = TaskContext.Instance().Config.OtherConfig.AutoRestartConfig;
@@ -168,15 +172,21 @@ public class TaskControl
 
             count++;
             Thread.Sleep(1000);
+            ThrowIfCancellationRequested(ct);
         }
     }
 
-    public static void Sleep(int millisecondsTimeout, CancellationToken ct)
+    private static void ThrowIfCancellationRequested(CancellationToken ct)
     {
         if (ct.IsCancellationRequested)
         {
             throw new NormalEndException("取消自动任务");
         }
+    }
+
+    public static void Sleep(int millisecondsTimeout, CancellationToken ct)
+    {
+        ThrowIfCancellationRequested(ct);
 
         if (millisecondsTimeout <= 0)
         {
@@ -185,27 +195,17 @@ public class TaskControl
 
         NewRetry.Do(() =>
         {
-            if (ct.IsCancellationRequested)
-            {
-                throw new NormalEndException("取消自动任务");
-            }
-
+            ThrowIfCancellationRequested(ct);
             TrySuspend();
-            CheckAndActivateGameWindow();
+            CheckAndActivateGameWindow(ct);
         }, TimeSpan.FromSeconds(1), 100);
         Thread.Sleep(millisecondsTimeout);
-        if (ct.IsCancellationRequested)
-        {
-            throw new NormalEndException("取消自动任务");
-        }
+        ThrowIfCancellationRequested(ct);
     }
 
     public static async Task Delay(int millisecondsTimeout, CancellationToken ct)
     {
-        if (ct is { IsCancellationRequested: true })
-        {
-            throw new NormalEndException("取消自动任务");
-        }
+        ThrowIfCancellationRequested(ct);
 
         if (millisecondsTimeout <= 0)
         {
@@ -214,19 +214,12 @@ public class TaskControl
 
         NewRetry.Do(() =>
         {
-            if (ct is { IsCancellationRequested: true })
-            {
-                throw new NormalEndException("取消自动任务");
-            }
-
+            ThrowIfCancellationRequested(ct);
             TrySuspend();
-            CheckAndActivateGameWindow();
+            CheckAndActivateGameWindow(ct);
         }, TimeSpan.FromSeconds(1), 100);
         await Task.Delay(millisecondsTimeout, ct);
-        if (ct is { IsCancellationRequested: true })
-        {
-            throw new NormalEndException("取消自动任务");
-        }
+        ThrowIfCancellationRequested(ct);
     }
 
     /// <summary>

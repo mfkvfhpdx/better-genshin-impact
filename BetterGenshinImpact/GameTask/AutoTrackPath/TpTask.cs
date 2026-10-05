@@ -863,6 +863,7 @@ public class TpTask
         TeleportClickView clickView)
     {
 
+        Sleep(1, ct);
         using var clickCapture = CaptureToRectArea();
         if (TryGetAbsoluteTeleportClickPosition(
                 clickCapture,
@@ -877,10 +878,12 @@ public class TpTask
             return null;
         }
 
-        // 校正点与邻近传送点的距离不足以安全区分时，先尝试未经校正的原始点。
+        // 校正点不够可信时，先点未经校正的原始点。
         // 若面板未出现，调用方会在不移动地图的前提下回退到本次已算出的候选校正点。
-        if (failure == AbsoluteMapClickFailure.NeighborSafetyDistance)
+        if (failure is AbsoluteMapClickFailure.NeighborSafetyDistance
+            or AbsoluteMapClickFailure.InsufficientPrecision)
         {
+            Logger.LogWarning("目标传送点绝对坐标定位失败：{Reason}，改用未经校正的原始点", failureReason);
             clickCapture.ClickTo(clickView.ClickX, clickView.ClickY);
             return new AbsoluteMapClickCandidate(clickX, clickY);
         }
@@ -1234,7 +1237,7 @@ public class TpTask
         {
             return await new TpTask(timeoutCts.Token).TpWithRetries(tpX, tpY, mapName, force);
         }
-        catch (OperationCanceledException e) when (!ct.IsCancellationRequested && timeoutCts.IsCancellationRequested)
+        catch (Exception e) when (IsLocalTeleportTimeout(e, timeoutCts))
         {
             throw new TimeoutException($"单次传送超过 {TeleportTimeoutMs / 1000} 秒", e);
         }
@@ -1253,8 +1256,7 @@ public class TpTask
                 // 同一视野内点击后未出现面板，重试只会重复点击同一位置。
                 
                 // 抛出异常按下 ESC 退出大地图，避免影响后续路径追踪任务
-                InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
-                await Delay(300, ct);
+                await CloseBigMapBeforeRetry();
                 
                 throw;
             }
@@ -1262,8 +1264,7 @@ public class TpTask
             {
                 // 未激活点位的详情面板会遮挡后续地图操作，重试前先关闭。
                 // 最后一次失败也需要执行清理，避免影响脚本组中的下一个任务。
-                InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
-                await Delay(300, ct);
+                await CloseBigMapBeforeRetry();
                 // throw; // 不抛出异常，继续重试
                 Logger.LogWarning(e.Message + "  重试");
             }
@@ -3540,6 +3541,24 @@ public class TpTask
     private static bool IsTaskStopException(Exception exception)
     {
         return exception is NormalEndException or OperationCanceledException;
+    }
+
+    private bool IsLocalTeleportTimeout(Exception exception, CancellationTokenSource timeoutCts)
+    {
+        return !ct.IsCancellationRequested &&
+               timeoutCts.IsCancellationRequested &&
+               IsTaskStopException(exception);
+    }
+
+    private async Task CloseBigMapBeforeRetry()
+    {
+        InputHub.Foreground.Keyboard.KeyPress(User32.VK.VK_ESCAPE);
+        if (ct.IsCancellationRequested)
+        {
+            ct.ThrowIfCancellationRequested();
+        }
+
+        await Delay(300, ct);
     }
 
     /// <summary>
