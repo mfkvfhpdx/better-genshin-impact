@@ -7,6 +7,7 @@
 ## 文档列表
 
 - [配置组「只拾取圣遗物」](group-artifact-pickup.md)
+- [背包材料统计：独立任务 + 配置组条目](inventory-material-stats.md)
 - [Pulonia 任务系统设计总览与开发计划](automation-system.md)
 - [BetterGI 多实例命名管道协议](multi-instance-ipc.md)
 - [BetterGI 输入层 InputHub 设计](input-hub.md)
