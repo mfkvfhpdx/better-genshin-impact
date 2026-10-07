@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Security.AccessControl;
 using System.Text;
 using System.Threading;
 using System.Windows;
@@ -37,12 +36,12 @@ public class WebpagePanel : UserControl
         }
         else
         {
-            EnsureWebView2DataFolder();
+            var userDataFolder = WebView2SharedUserDataFolder.Resolve();
             _webView = new WebView2()
             {
                 CreationProperties = new CoreWebView2CreationProperties
                 {
-                    UserDataFolder = Path.Combine(new FileInfo(Environment.ProcessPath!).DirectoryName!, @"WebView2Data\\"),
+                    UserDataFolder = userDataFolder,
 
                     // TODO: change the theme from `md2html.html` to fit it firstly.
                     // AdditionalBrowserArguments = "--enable-features=WebContentsForceDark"
@@ -217,20 +216,6 @@ public class WebpagePanel : UserControl
         button.Click += (sender, e) => Process.Start("https://go.microsoft.com/fwlink/p/?LinkId=2124703");
 
         return button;
-    }
-
-    private void EnsureWebView2DataFolder()
-    {
-        try
-        {
-            string folder = Path.Combine(new FileInfo(Environment.ProcessPath!).DirectoryName!, @"WebView2Data\\");
-            Directory.CreateDirectory(folder);
-            DirectoryInfo info = new DirectoryInfo(folder);
-            DirectorySecurity access = info.GetAccessControl();
-            access.AddAccessRule(new FileSystemAccessRule("Everyone", FileSystemRights.FullControl, AccessControlType.Allow));
-            info.SetAccessControl(access);
-        }
-        catch { }
     }
 
 }

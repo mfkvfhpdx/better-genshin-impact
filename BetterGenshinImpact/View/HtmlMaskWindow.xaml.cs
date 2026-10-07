@@ -56,7 +56,7 @@ public partial class HtmlMaskWindow : Window
     {
         _id = id ?? Guid.NewGuid().ToString("N");
         _workDir = Path.GetFullPath(workDir);
-        _webView2DataPath = Path.Combine(AppContext.BaseDirectory, "WebView2Data");
+        _webView2DataPath = WebView2SharedUserDataFolder.Resolve();
 
         var scriptName = Path.GetFileName(Path.TrimEndingDirectorySeparator(_workDir));
         var scriptKey = CreateScriptKey(scriptName);

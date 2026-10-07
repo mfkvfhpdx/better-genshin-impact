@@ -30,7 +30,8 @@ public sealed class WebViewInstanceStore
 
     /// <summary>
     /// 所有网页版实例的数据根目录 <c>WebView2Data/CloudGame</c>。
-    /// WebView2Data 本身是 HtmlMask 等功能共用的用户数据目录，子目录 CloudGame 不会被它们使用，各实例的用户数据互相独立
+    /// HtmlMask / 日志分析等共用目录由 <see cref="Helpers.WebView2SharedUserDataFolder"/> 解析（占用时用 WebView2Data_2 等备用槽）；
+    /// 子目录 CloudGame 不会被它们使用，各云原神实例的用户数据互相独立
     /// </summary>
     public static string Root => Global.Absolute(Path.Combine("WebView2Data", "CloudGame"));
 
